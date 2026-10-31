@@ -11,7 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="Live Click">
-    <title>Live Click Pro v3.10</title>
+    <title>Live Click Pro v3.11</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 15px; margin: 0; text-align: center; }
         .container { max-width: 480px; margin: auto; background: #1e1e1e; padding: 15px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
@@ -60,13 +60,14 @@
 <body>
 
 <div class="container">
-    <h2>Live Click Pro v3.10 🥁</h2>
+    <h2>Live Click Pro v3.11 🥁</h2>
 
     <div class="live-panel">
         <div class="current-song" id="liveSongName">NESSUN BRANO</div>
         <div class="bpm-display" id="liveBpm">120</div>
         <div class="beat-counter" id="liveBeat">Battuta: 1.1</div>
         <div class="pre-hint" id="preHint">All'avvio: 2 battute di pre-conteggio</div>
+        <div class="pre-hint" id="nextChange" style="color:#aaa;"></div>
 
         <div class="bpm-controls">
             <button class="btn-speed" onclick="changeBpm(-5)">-5</button>
@@ -144,20 +145,34 @@
         <div id="selCmdsContainer" class="cmd-list">Nessun comando vocale.</div>
     </div>
 
-    <div class="section">
-        <div class="section-title">3. Cambi di Tempo</div>
-        <div class="row">
-            <span style="font-size:13px;">Dalla battuta</span><input type="number" id="tcBar" value="9" min="1" style="width:65px;">
-            <span style="font-size:13px;">BPM</span><input type="number" id="tcBpm" value="130" min="30" max="300" style="width:70px;">
+    <div class="section" id="tcSection">
+        <div class="section-title">3. Cambi di tempo</div>
+        <div class="dest">
+            <span>Aggiungi a:</span>
+            <label><input type="radio" name="tcDest" id="tcDestNuovo" value="nuovo" checked> brano nuovo</label>
+            <label><input type="radio" name="tcDest" id="tcDestSel" value="selezionato"> brano selezionato</label>
         </div>
         <div class="row">
-            <span style="font-size:13px;">Graduale in</span><input type="number" id="tcRamp" value="0" min="0" style="width:65px;"><span style="font-size:13px;">battute (0 = di colpo)</span>
+            <span style="font-size:13px;">Dalla battuta</span><input type="number" id="tcBar" value="5" min="1" style="width:70px;">
+            <span style="font-size:13px;">BPM</span><input type="number" id="tcBpm" value="120" min="30" max="300" style="width:80px;">
         </div>
         <div class="row">
-            <button class="btn-action" style="flex:1; background:#10ac84; color:white; border:none;" onclick="aggiungiCambioTempo(false)">➕ Al brano nuovo</button>
-            <button class="btn-action" style="flex:1; background:#00adb5; color:white; border:none;" onclick="aggiungiCambioTempo(true)">➕ Al brano selezionato</button>
+            <span style="font-size:13px;">Tipo</span>
+            <select id="tcTipo" onchange="aggiornaCampoRampa()" style="width:150px; margin:0;">
+                <option value="istantaneo">Istantaneo</option>
+                <option value="rampa">Rampa</option>
+            </select>
         </div>
-        <div style="font-size:12px; color:#aaa;">Brano nuovo:</div>
+        <div class="row" id="tcRampWrap" style="display:none;">
+            <span style="font-size:13px;">In</span><input type="number" id="tcRamp" value="2" min="1" style="width:70px;"><span style="font-size:13px;">battute</span>
+        </div>
+        <button class="btn-action" id="tcBaseBtn" style="width:100%; margin-bottom:8px;" onclick="mettiTempoIniziale()">↩ Torna al tempo iniziale</button>
+        <div class="row">
+            <button class="btn-action" id="tcAddBtn" style="flex:1; background:#00adb5; color:white; border:none;" onclick="aggiungiCambioTempo()">➕ Aggiungi cambio</button>
+            <button class="btn-action" id="tcCancelBtn" style="display:none;" onclick="annullaModificaCambio()">Annulla</button>
+        </div>
+        <div class="msg" id="tcMsg"></div>
+        <div style="font-size:12px; color:#aaa;">Ogni cambio vale dalla sua battuta fino al successivo. Brano nuovo:</div>
         <div id="tempTcContainer" class="cmd-list">Nessun cambio di tempo.</div>
         <div style="font-size:12px; color:#aaa; margin-top:6px;">Brano selezionato:</div>
         <div id="selTcContainer" class="cmd-list">Nessun cambio di tempo.</div>
@@ -202,6 +217,7 @@
     const BATTITI_PRE = 4;
     let comandiTemporanei = [];   // { battuta, audioId, blob }  (blob in memoria finché non salvi il brano)
     let cambiTemporanei = [];
+    let tcEdit = null; // { dove:'temp'|'sel', idx } mentre si modifica una riga
     let suonoTema = localStorage.getItem('suono_v37') || 'classico';
     let accentoOn = localStorage.getItem('accento_v37') !== '0';
     let tapTimes = [];
@@ -298,6 +314,7 @@
             if (await migra()) msg('storageMsg', '✅ Scaletta della v3.7 importata (comandi vocali inclusi).', 'ok');
         } catch(e) { msg('storageMsg', '⚠️ Importazione dalla v3.7 non riuscita: i vecchi dati restano intatti. ' + e.message, 'err'); }
         if (!scaletta.length) { try { scaletta = JSON.parse(localStorage.getItem(KEY)) || []; } catch(e) { scaletta = []; } }
+        if (normalizzaScaletta()) salva();
         idSelezionato = scaletta.length ? scaletta[0].id : null;
         renderScaletta();
         if (idSelezionato) caricaBrano(idSelezionato); else { renderCambiSelezionato(); renderComandiSelezionato(); resetConteggio(); }
@@ -372,13 +389,13 @@
             btn.disabled = false;
             return alert("⚠️ Brano NON salvato: impossibile salvare l'audio dei comandi vocali (" + e.message + "). Riprova.");
         }
-        const nuovoBrano = { id: Date.now(), nome, bpm, comandi: comandiTemporanei.map(c => ({ battuta: c.battuta, audioId: c.audioId })), cambi: [...cambiTemporanei] };
+        const nuovoBrano = { id: Date.now(), nome, bpm, comandi: comandiTemporanei.map(c => ({ battuta: c.battuta, audioId: c.audioId })), cambi: sistemaLista(cambiTemporanei) };
         scaletta.push(nuovoBrano);
         if (!salva()) { scaletta.pop(); btn.disabled = false; return; }
         btn.disabled = false;
         document.getElementById('songName').value = '';
         comandiTemporanei = []; aggiornaGraficaComandiTemporanei();
-        cambiTemporanei = []; renderCambi(cambiTemporanei, 'tempTcContainer', 'cambiTemporanei');
+        cambiTemporanei = []; annullaModificaCambio(); renderCambi(cambiTemporanei, 'tempTcContainer', 'temp');
         caricaBrano(nuovoBrano.id);
         msg('storageMsg', `✅ "${nome}" salvato in scaletta${nuovoBrano.comandi.length ? ` con ${nuovoBrano.comandi.length} comandi vocali` : ''}.`, 'ok');
     }
@@ -427,7 +444,7 @@
                 comandi.push({ battuta: c.battuta, audio });
             }
             comandi.sort((x, y) => x.battuta - y.battuta);
-            const cambi = (b.cambi || []).map(c => ({ battuta: c.battuta, bpm: c.bpm, rampa: c.rampa || 0 }));
+            const cambi = sistemaLista(b.cambi).map(c => ({ battuta: c.battuta, bpm: c.bpm, rampa: c.rampa, tipo: c.tipo }));
             cambi.sort((x, y) => x.battuta - y.battuta);
             brani.push({ id: b.id, nome, bpm, comandi, cambi });
         }
@@ -545,9 +562,20 @@
         const bpm = Number(b.bpm);
         if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) throw erroreBackup('File non valido: BPM di "' + nome + '" non è tra 30 e 300.');
         if (b.comandi != null && !Array.isArray(b.comandi)) throw erroreBackup('File non valido: comandi vocali di "' + nome + '" illeggibili.');
-        if (b.cambi != null && !Array.isArray(b.cambi)) throw erroreBackup('File non valido: cambi di tempo di "' + nome + '" illeggibili.');
+        const rawCambi = b.cambi != null ? b.cambi : b.cambio;
+        let listaCambi;
+        if (rawCambi == null) listaCambi = [];
+        else if (Array.isArray(rawCambi)) listaCambi = rawCambi;
+        else if (typeof rawCambi === 'object') listaCambi = [rawCambi];
+        else throw erroreBackup('File non valido: cambi di tempo di "' + nome + '" illeggibili.');
         const comandi = (b.comandi || []).map(c => validaComandoBackup(c, nome));
-        const cambi = (b.cambi || []).map(c => validaCambioBackup(c, nome));
+        const parziali = listaCambi.map(c => validaCambioBackup(c, nome));
+        const viste = new Set();
+        for (const c of parziali) {
+            if (viste.has(c.battuta)) throw erroreBackup('File non valido: due cambi alla battuta ' + c.battuta + ' in "' + nome + '".');
+            viste.add(c.battuta);
+        }
+        const cambi = sistemaLista(parziali);
         return { id: b.id, nome, bpm: Math.round(bpm), comandi, cambi };
     }
     function validaComandoBackup(c, nome) {
@@ -570,7 +598,9 @@
         if (!Number.isInteger(battuta) || battuta < 1) throw erroreBackup('File non valido: battuta del cambio di tempo in "' + nome + '" non valida.');
         if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) throw erroreBackup('File non valido: BPM del cambio di tempo in "' + nome + '" non è tra 30 e 300.');
         if (!Number.isInteger(rampa) || rampa < 0) throw erroreBackup('File non valido: rampa del cambio di tempo in "' + nome + '" non valida.');
-        return { battuta, bpm: Math.round(bpm), rampa };
+        const n = normalizzaUno({ battuta, bpm, rampa, tipo: c.tipo });
+        if (!n) throw erroreBackup('File non valido: cambio di tempo di "' + nome + '" illeggibile.');
+        return n;
     }
     function nascondiSceltaImport() {
         importInAttesa = null;
@@ -620,7 +650,7 @@
         return lista.map(b => ({
             id: b.id, nome: b.nome, bpm: b.bpm,
             comandi: (b.comandi || []).map(c => ({ battuta: c.battuta, audioId: c.audioId })),
-            cambi: (b.cambi || []).map(c => ({ battuta: c.battuta, bpm: c.bpm, rampa: c.rampa || 0 }))
+            cambi: sistemaLista(b.cambi)
         }));
     }
     function mostraScalettaDopoImport(modo, idPrima) {
@@ -655,7 +685,7 @@
                     comandi.push({ battuta: c.battuta, audioId });
                 }
                 comandi.sort((x, y) => x.battuta - y.battuta);
-                const cambi = b.cambi.map(c => ({ battuta: c.battuta, bpm: c.bpm, rampa: c.rampa || 0 })).sort((x, y) => x.battuta - y.battuta);
+                const cambi = sistemaLista(b.cambi);
                 preparati.push({ id: assegnaId(b.id, usati), nome: b.nome, bpm: b.bpm, comandi, cambi });
             }
             const nuova = modo === 'sostituisci' ? preparati : scaletta.concat(preparati);
@@ -901,6 +931,7 @@
                 el.classList.add('pre');
                 el.innerText = `PRE ${barra}/${tot} · ${bt}`;
                 document.getElementById('liveBpm').innerText = bpmOra;
+                aggiornaProssimo(0);
             }, delay);
             return;
         }
@@ -916,6 +947,7 @@
             el.classList.remove('pre');
             el.innerText = `Battuta: ${m}.${bt}`;
             document.getElementById('liveBpm').innerText = bpmOra;
+            aggiornaProssimo(m + (bt - 1) / beatsPerMeasure);
         }, delay);
     }
     function durataBattito() {
@@ -954,6 +986,7 @@
         preBarra = 1;
         preBeat = 0;
         scriviBattuta(inPreconto, 1, 1, 1, 1);
+        aggiornaProssimo(inPreconto ? 0 : 1);
     }
     function toggleMetronome() {
         ctx();
@@ -962,6 +995,7 @@
             runId++;
             clearTimeout(timerId); isPlaying = false;
             document.getElementById('liveBpm').innerText = currentBpm;
+            aggiornaProssimo(inPreconto ? 0 : currentMeasure + currentBeatInMeasure / beatsPerMeasure);
             btn.innerText = "AVVIA"; btn.classList.remove('playing');
         } else {
             resetConteggio(); precaricaVocali();
@@ -971,55 +1005,196 @@
         }
     }
 
-    // ===== CAMBI DI TEMPO =====
-    function cambiDelBrano() { const b = branoSel(); return (b && b.cambi) ? b.cambi : []; }
-    function tempoCorrente() {
-        const pos = currentMeasure + currentBeatInMeasure / beatsPerMeasure;
-        let bpm = currentBpm;
-        const lista = [...cambiDelBrano()].sort((a,b) => a.battuta - b.battuta);
-        for (const c of lista) {
-            const inizio = c.battuta, rampa = c.rampa || 0;
-            if (pos < inizio) break;
-            if (rampa > 0 && pos < inizio + rampa) { bpm = bpm + (c.bpm - bpm) * ((pos - inizio) / rampa); break; }
+    // ===== CAMBI DI TEMPO (lista, un cambio per battuta) =====
+    function normalizzaUno(c) {
+        if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+        const battuta = Math.round(Number(c.battuta));
+        const bpm = Math.round(Number(c.bpm));
+        if (!Number.isInteger(battuta) || battuta < 1) return null;
+        if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) return null;
+        let rampa = c.rampa == null || c.rampa === '' ? 0 : Math.round(Number(c.rampa));
+        if (!Number.isFinite(rampa) || rampa < 0) rampa = 0;
+        let tipo = c.tipo === 'istantaneo' || c.tipo === 'rampa' ? c.tipo : (rampa > 0 ? 'rampa' : 'istantaneo');
+        if (tipo === 'istantaneo') rampa = 0;
+        if (tipo === 'rampa' && rampa < 1) rampa = 1;
+        return { battuta, bpm, rampa, tipo };
+    }
+    function sistemaLista(raw) {
+        let arr = raw;
+        if (arr == null) arr = [];
+        else if (!Array.isArray(arr)) arr = [arr];
+        const out = [];
+        for (const item of arr) {
+            const n = normalizzaUno(item);
+            if (!n) continue;
+            if (!out.some(x => x.battuta === n.battuta)) out.push(n);
+        }
+        out.sort((a, b) => a.battuta - b.battuta);
+        for (let i = 0; i < out.length - 1; i++) {
+            const gap = out[i + 1].battuta - out[i].battuta;
+            if (out[i].tipo === 'rampa' && out[i].rampa > gap) out[i].rampa = gap;
+        }
+        return out;
+    }
+    function normalizzaScaletta() {
+        let changed = false;
+        for (const b of scaletta) {
+            const next = sistemaLista(b.cambi);
+            if (JSON.stringify(b.cambi ?? null) !== JSON.stringify(next)) changed = true;
+            b.cambi = next;
+        }
+        return changed;
+    }
+    function cambiDelBrano() { const b = branoSel(); return b ? sistemaLista(b.cambi) : []; }
+    function bpmAllaPosizione(pos, base, raw) {
+        let bpm = base;
+        for (const c of sistemaLista(raw)) {
+            if (pos < c.battuta) break;
+            if (c.tipo === 'rampa' && c.rampa > 0 && pos < c.battuta + c.rampa) {
+                bpm = bpm + (c.bpm - bpm) * ((pos - c.battuta) / c.rampa);
+                break;
+            }
             bpm = c.bpm;
         }
         return Math.max(30, Math.min(300, bpm));
     }
-    function aggiungiCambioTempo(alSelezionato) {
-        const battuta = parseInt(document.getElementById('tcBar').value);
-        const bpm = parseInt(document.getElementById('tcBpm').value);
-        const rampa = Math.max(0, parseInt(document.getElementById('tcRamp').value) || 0);
-        if (isNaN(battuta) || battuta < 1) return alert("Metti una battuta valida");
-        if (isNaN(bpm) || bpm < 30 || bpm > 300) return alert("BPM tra 30 e 300");
-        const cambio = { battuta, bpm, rampa };
-        if (alSelezionato) {
+    function tempoCorrente() {
+        const pos = currentMeasure + currentBeatInMeasure / beatsPerMeasure;
+        return bpmAllaPosizione(pos, currentBpm, cambiDelBrano());
+    }
+    function aggiornaProssimo(pos) {
+        const el = document.getElementById('nextChange');
+        if (!el) return;
+        const lista = cambiDelBrano();
+        const next = lista.find(c => c.battuta > pos);
+        if (!next) { el.innerText = lista.length ? 'Nessun altro cambio' : ''; return; }
+        const rampa = next.tipo === 'rampa' && next.rampa > 0 ? ` (rampa ${next.rampa} batt.)` : '';
+        el.innerText = `Prossimo: ${next.bpm} BPM a battuta ${next.battuta}${rampa}`;
+    }
+    function aggiornaCampoRampa() {
+        const rampa = document.getElementById('tcTipo').value === 'rampa';
+        document.getElementById('tcRampWrap').style.display = rampa ? 'flex' : 'none';
+    }
+    function mettiTempoIniziale() {
+        const sel = document.getElementById('tcDestSel').checked || (tcEdit && tcEdit.dove === 'sel');
+        const b = branoSel();
+        let bpm = sel && b ? parseInt(b.bpm, 10) : parseInt(document.getElementById('songBpm').value, 10);
+        if (!Number.isFinite(bpm)) bpm = currentBpm;
+        document.getElementById('tcBpm').value = bpm;
+    }
+    function annullaModificaCambio() {
+        tcEdit = null;
+        const add = document.getElementById('tcAddBtn');
+        const cancel = document.getElementById('tcCancelBtn');
+        if (add) add.textContent = '➕ Aggiungi cambio';
+        if (cancel) cancel.style.display = 'none';
+    }
+    function listaDove(dove) {
+        if (dove === 'sel') return cambiDelBrano();
+        return sistemaLista(cambiTemporanei);
+    }
+    function scriviLista(dove, lista) {
+        if (dove === 'sel') {
             const b = branoSel();
-            if (!b) return alert("Nessun brano selezionato in scaletta");
-            if (!b.cambi) b.cambi = [];
-            b.cambi.push(cambio); b.cambi.sort((x,y) => x.battuta - y.battuta);
-            if (!salva()) b.cambi.splice(b.cambi.indexOf(cambio), 1);
+            if (!b) return false;
+            const prima = sistemaLista(b.cambi);
+            b.cambi = lista;
+            if (!salva()) { b.cambi = prima; return false; }
             renderCambiSelezionato();
         } else {
-            cambiTemporanei.push(cambio); cambiTemporanei.sort((x,y) => x.battuta - y.battuta);
-            renderCambi(cambiTemporanei, 'tempTcContainer', 'cambiTemporanei');
+            cambiTemporanei = lista;
+            renderCambi(cambiTemporanei, 'tempTcContainer', 'temp');
         }
+        aggiornaProssimo(inPreconto ? 0 : currentMeasure + currentBeatInMeasure / beatsPerMeasure);
+        return true;
     }
-    function testoCambio(c) { return `Battuta ${c.battuta} → ${c.bpm} BPM${c.rampa > 0 ? ` (graduale in ${c.rampa} batt.)` : ''}`; }
-    function renderCambi(lista, containerId, tipo) {
+    function aggiungiCambioTempo() {
+        const dove = tcEdit ? tcEdit.dove : (document.getElementById('tcDestSel').checked ? 'sel' : 'temp');
+        const battuta = parseInt(document.getElementById('tcBar').value, 10);
+        const bpm = parseInt(document.getElementById('tcBpm').value, 10);
+        const tipo = document.getElementById('tcTipo').value === 'rampa' ? 'rampa' : 'istantaneo';
+        const rampaLetta = parseInt(document.getElementById('tcRamp').value, 10);
+        if (!Number.isInteger(battuta) || battuta < 1) return msg('tcMsg', 'Metti una battuta valida (1 o più).', 'err');
+        if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) return msg('tcMsg', 'BPM tra 30 e 300.', 'err');
+        if (tipo === 'rampa' && (!Number.isInteger(rampaLetta) || rampaLetta < 1)) return msg('tcMsg', 'La rampa deve durare almeno 1 battuta.', 'err');
+        const cambio = normalizzaUno({ battuta, bpm, rampa: tipo === 'rampa' ? rampaLetta : 0, tipo });
+        if (dove === 'sel' && !branoSel()) return msg('tcMsg', 'Nessun brano selezionato in scaletta.', 'err');
+        const attuale = listaDove(dove);
+        const ignora = tcEdit && tcEdit.dove === dove ? tcEdit.idx : -1;
+        if (attuale.some((c, i) => i !== ignora && c.battuta === cambio.battuta)) {
+            return msg('tcMsg', `C'è già un cambio alla battuta ${cambio.battuta}.`, 'err');
+        }
+        const senza = attuale.filter((_, i) => i !== ignora);
+        const voluti = senza.map(c => ({ ...c }));
+        voluti.push({ ...cambio });
+        const lista = sistemaLista(voluti);
+        if (!scriviLista(dove, lista)) return msg('tcMsg', 'Cambio non salvato: memoria del browser piena o bloccata.', 'err');
+        let testo = tcEdit ? `Cambio alla battuta ${cambio.battuta} aggiornato.` : `Cambio aggiunto: battuta ${cambio.battuta} → ${cambio.bpm} BPM.`;
+        for (const c of lista) {
+            const fonte = c.battuta === cambio.battuta ? cambio : voluti.find(x => x.battuta === c.battuta);
+            if (fonte && fonte.tipo === 'rampa' && c.rampa < fonte.rampa) {
+                testo = `Rampa accorciata a ${c.rampa} battut${c.rampa === 1 ? 'a' : 'e'} (battuta ${c.battuta}): il cambio successivo arriva prima della fine della rampa.`;
+                if (c.battuta === cambio.battuta) break;
+            }
+        }
+        annullaModificaCambio();
+        renderCambi(listaDove('temp'), 'tempTcContainer', 'temp');
+        renderCambiSelezionato();
+        msg('tcMsg', testo, 'info');
+    }
+    function modificaCambio(dove, idx) {
+        const lista = listaDove(dove);
+        const c = lista[idx];
+        if (!c) return;
+        tcEdit = { dove, idx };
+        document.getElementById(dove === 'sel' ? 'tcDestSel' : 'tcDestNuovo').checked = true;
+        document.getElementById('tcBar').value = c.battuta;
+        document.getElementById('tcBpm').value = c.bpm;
+        document.getElementById('tcTipo').value = c.tipo;
+        document.getElementById('tcRamp').value = c.tipo === 'rampa' ? c.rampa : 2;
+        aggiornaCampoRampa();
+        document.getElementById('tcAddBtn').textContent = '💾 Aggiorna cambio';
+        document.getElementById('tcCancelBtn').style.display = 'inline-block';
+        msg('tcMsg', `Modifica del cambio alla battuta ${c.battuta}.`, 'info');
+    }
+    function testoCambio(c) {
+        const come = c.tipo === 'rampa' && c.rampa > 0 ? `rampa ${c.rampa} batt.` : 'istantaneo';
+        return `Battuta ${c.battuta} → ${c.bpm} BPM, ${come}`;
+    }
+    function renderCambi(lista, containerId, dove) {
         const container = document.getElementById(containerId);
-        if (!lista.length) { container.innerHTML = "Nessun cambio di tempo."; return; }
+        const ordinata = sistemaLista(lista);
+        if (!ordinata.length) { container.innerHTML = 'Nessun cambio di tempo.'; return; }
         container.innerHTML = '';
-        lista.forEach((c, idx) => {
-            const div = document.createElement('div'); div.className = 'cmd-item';
-            div.innerHTML = `<span>⏱️ ${testoCambio(c)}</span> <span style="color:#ff2e63; cursor:pointer;" onclick="rimuoviCambio('${tipo}', ${idx})">❌</span>`;
+        ordinata.forEach((c, idx) => {
+            const div = document.createElement('div');
+            div.className = 'cmd-item';
+            const label = document.createElement('span');
+            label.textContent = '⏱️ ' + testoCambio(c);
+            const acts = document.createElement('span');
+            acts.className = 'acts';
+            const edit = document.createElement('span');
+            edit.textContent = 'Modifica';
+            edit.style.color = '#00adb5';
+            edit.onclick = () => modificaCambio(dove, idx);
+            const del = document.createElement('span');
+            del.textContent = '❌';
+            del.style.color = '#ff2e63';
+            del.onclick = () => rimuoviCambio(dove, idx);
+            acts.appendChild(edit);
+            acts.appendChild(del);
+            div.appendChild(label);
+            div.appendChild(acts);
             container.appendChild(div);
         });
     }
-    function rimuoviCambio(tipo, idx) {
-        if (tipo === 'cambiTemporanei') { cambiTemporanei.splice(idx,1); renderCambi(cambiTemporanei, 'tempTcContainer', tipo); }
-        else { const b = branoSel(); if (b && b.cambi) { const [c] = b.cambi.splice(idx,1); if (!salva()) b.cambi.splice(idx,0,c); renderCambiSelezionato(); } }
+    function rimuoviCambio(dove, idx) {
+        const lista = listaDove(dove).filter((_, i) => i !== idx);
+        if (tcEdit && tcEdit.dove === dove) annullaModificaCambio();
+        if (!scriviLista(dove, lista)) return msg('tcMsg', 'Eliminazione non salvata.', 'err');
+        msg('tcMsg', 'Cambio eliminato.', 'info');
     }
-    function renderCambiSelezionato() { renderCambi(cambiDelBrano(), 'selTcContainer', 'selezionato'); }
+    function renderCambiSelezionato() { renderCambi(cambiDelBrano(), 'selTcContainer', 'sel'); }
 
     // ===== TAP TEMPO =====
     function tapTempo(e) {
