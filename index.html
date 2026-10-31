@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#121212">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Live Click">
+    <title>Live Click Pro v3.8</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 15px; margin: 0; text-align: center; }
+        .container { max-width: 480px; margin: auto; background: #1e1e1e; padding: 15px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
+        h2 { color: #00adb5; margin: 5px 0; }
+        .live-panel { background: #252525; padding: 15px; border-radius: 15px; margin-bottom: 15px; border: 2px solid #333; }
+        .current-song { font-size: 20px; color: #ff2e63; font-weight: bold; }
+        .bpm-display { font-size: 54px; font-weight: bold; color: #00adb5; margin: 5px 0; }
+        .beat-counter { font-size: 22px; color: #ff9f43; margin-bottom: 10px; font-weight: bold; }
+        .bpm-controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
+        .btn-speed { background: #333; color: white; border: 1px solid #444; font-size: 20px; width: 55px; height: 55px; border-radius: 50%; cursor: pointer; }
+        .btn-speed:active { background: #00adb5; }
+        .btn-main { background: #ff2e63; color: white; border: none; padding: 15px; font-size: 20px; border-radius: 10px; width: 100%; font-weight: bold; cursor: pointer; }
+        .btn-main.playing { background: #10ac84; }
+        .btn-next-live { background: #00adb5; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 10px; width: 100%; font-weight: bold; margin-top: 10px; cursor: pointer; }
+        .section { background: #252525; border-radius: 12px; padding: 12px; margin-top: 15px; text-align: left; }
+        .section-title { font-size: 16px; color: #00adb5; font-weight: bold; margin-bottom: 10px; }
+        input { background: #2d2d2d; border: 1px solid #444; color: white; padding: 8px; border-radius: 5px; font-size: 14px; margin-bottom: 8px; width: 100%; box-sizing: border-box; }
+        .row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+        .btn-action { background: #333; color: white; border: 1px solid #555; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .setlist { max-height: 180px; overflow-y: auto; margin-top: 10px; }
+        .song-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #333; cursor: pointer; }
+        .song-item.active { background: rgba(0, 173, 181, 0.2); border-left: 4px solid #00adb5; }
+        .btn-del { background: none; border: none; color: #ff2e63; cursor: pointer; font-size: 16px; }
+        .rec-active { background: #ff2e63 !important; animation: pulse 1s infinite; border-color: #ff2e63; }
+        .cmd-list { font-size: 13px; background: #1a1a1a; padding: 5px; border-radius: 5px; margin-top: 5px; }
+        .cmd-item { display: flex; justify-content: space-between; color: #ff9f43; padding: 4px 0; border-bottom: 1px dashed #333; }
+        .btn-tap { display:block; margin: 0 auto 15px; width: 130px; height: 130px; border-radius: 50%; background: #2d2d2d; color: #ff9f43; border: 3px solid #ff9f43; font-size: 22px; font-weight: bold; cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+        .btn-tap:active, .btn-tap.flash { background: #ff9f43; color: #121212; }
+        .tap-info { font-size: 12px; color: #aaa; margin-top: -10px; margin-bottom: 12px; }
+        select { background: #2d2d2d; border: 1px solid #444; color: white; padding: 8px; border-radius: 5px; font-size: 14px; margin-bottom: 8px; width: 100%; box-sizing: border-box; }
+        .row input { margin: 0; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .msg { font-size: 13px; margin-top: 8px; padding: 6px 8px; border-radius: 5px; display: none; }
+        .msg.ok { display:block; background: rgba(16,172,132,0.2); color: #1dd1a1; }
+        .msg.err { display:block; background: rgba(255,46,99,0.2); color: #ff6b8b; }
+        .msg.info { display:block; background: rgba(0,173,181,0.15); color: #7fdbe0; }
+        .mic-status { font-size: 12px; color: #aaa; margin-bottom: 8px; }
+        .cmd-item .acts span { cursor: pointer; margin-left: 10px; }
+        .dest { display:flex; gap:12px; font-size:13px; margin-bottom:8px; flex-wrap: wrap; }
+        .dest label { display:flex; align-items:center; gap:5px; }
+        .dest input { width:auto; margin:0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Live Click Pro v3.8 🥁</h2>
+
+    <div class="live-panel">
+        <div class="current-song" id="liveSongName">NESSUN BRANO</div>
+        <div class="bpm-display" id="liveBpm">120</div>
+        <div class="beat-counter" id="liveBeat">Battuta: 1.1</div>
+
+        <div class="bpm-controls">
+            <button class="btn-speed" onclick="changeBpm(-5)">-5</button>
+            <button class="btn-speed" onclick="changeBpm(-1)">-1</button>
+            <button class="btn-speed" onclick="changeBpm(1)">+1</button>
+            <button class="btn-speed" onclick="changeBpm(5)">+5</button>
+        </div>
+
+        <button class="btn-tap" id="tapBtn" onpointerdown="tapTempo(event)">TAP</button>
+        <div class="tap-info" id="tapInfo">Tocca 4 volte a tempo per impostare i BPM</div>
+        <button class="btn-action" id="saveBpmBtn" style="margin:-4px 0 12px; display:none;" onclick="salvaBpmNelBrano()">💾 Salva BPM nel brano</button>
+
+        <button class="btn-main" id="startBtn" onclick="toggleMetronome()">AVVIA</button>
+        <button class="btn-next-live" onclick="prossimoBrano()">⏭️ PROSSIMO BRANO</button>
+    </div>
+
+    <div class="section">
+        <div class="section-title">🔊 Suono del Click</div>
+        <select id="soundTheme" onchange="salvaSuono()">
+            <option value="classico">Classico beep</option>
+            <option value="legno">Legno / Woodblock</option>
+            <option value="clave">Clave</option>
+            <option value="hihat">Hi-hat</option>
+            <option value="cowbell">Cowbell</option>
+            <option value="rimshot">Rimshot</option>
+            <option value="soft">Elettronico soft</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px;"><input type="checkbox" id="accentOn" onchange="salvaSuono()" style="width:auto; margin:0;"> Accento sul primo battito</label>
+        <button class="btn-action" style="margin-top:8px;" onclick="provaSuono()">▶️ Prova suono</button>
+    </div>
+
+    <div class="section">
+        <div class="section-title">1. Configura Nuovo Brano</div>
+        <input type="text" id="songName" placeholder="Nome Brano (es. Intro Rock)">
+        <input type="number" id="songBpm" placeholder="BPM" value="120" style="width: 100px;">
+    </div>
+
+    <div class="section">
+        <div class="section-title">2. Comandi Vocali</div>
+        <div class="mic-status" id="micStatus">🎤 Microfono: verifica in corso...</div>
+        <div class="dest">
+            <span>Aggiungi a:</span>
+            <label><input type="radio" name="cmdDest" id="destNuovo" value="nuovo" checked> brano nuovo</label>
+            <label><input type="radio" name="cmdDest" id="destSel" value="selezionato"> brano selezionato</label>
+        </div>
+        <div class="row">
+            <button class="btn-action" id="recBtn" onclick="toggleRegistroVocale()" style="background: #ff2e63; color: white;">🎤 Registra Voce</button>
+            <span style="font-size: 14px;">Alla battuta:</span>
+            <input type="number" id="triggerBeat" value="4" min="1" style="width:70px; margin:0;">
+        </div>
+        <div style="font-size:12px; color:#aaa;">Premi STOP e la voce viene associata da sola alla battuta indicata.</div>
+        <div class="msg" id="recMsg"></div>
+        <div class="row" style="margin-top:8px;">
+            <button class="btn-action" id="previewLastBtn" style="flex:1;" onclick="ascoltaUltima()" disabled>▶️ Ascolta ultima registrazione</button>
+        </div>
+
+        <div style="font-size:12px; margin-top:10px; color:#aaa;">Brano nuovo (salvati con 💾 SALVA BRANO):</div>
+        <div id="tempCmdsContainer" class="cmd-list">Nessun comando vocale pronto.</div>
+        <div style="font-size:12px; margin-top:6px; color:#aaa;">Brano selezionato (già salvati):</div>
+        <div id="selCmdsContainer" class="cmd-list">Nessun comando vocale.</div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">3. Cambi di Tempo</div>
+        <div class="row">
+            <span style="font-size:13px;">Dalla battuta</span><input type="number" id="tcBar" value="9" min="1" style="width:65px;">
+            <span style="font-size:13px;">BPM</span><input type="number" id="tcBpm" value="130" min="30" max="300" style="width:70px;">
+        </div>
+        <div class="row">
+            <span style="font-size:13px;">Graduale in</span><input type="number" id="tcRamp" value="0" min="0" style="width:65px;"><span style="font-size:13px;">battute (0 = di colpo)</span>
+        </div>
+        <div class="row">
+            <button class="btn-action" style="flex:1; background:#10ac84; color:white; border:none;" onclick="aggiungiCambioTempo(false)">➕ Al brano nuovo</button>
+            <button class="btn-action" style="flex:1; background:#00adb5; color:white; border:none;" onclick="aggiungiCambioTempo(true)">➕ Al brano selezionato</button>
+        </div>
+        <div style="font-size:12px; color:#aaa;">Brano nuovo:</div>
+        <div id="tempTcContainer" class="cmd-list">Nessun cambio di tempo.</div>
+        <div style="font-size:12px; color:#aaa; margin-top:6px;">Brano selezionato:</div>
+        <div id="selTcContainer" class="cmd-list">Nessun cambio di tempo.</div>
+    </div>
+
+    <button class="btn-action" id="saveSongBtn" style="width:100%; margin: 15px 0; background:#ff9f43; color:black; padding:12px; font-size:16px; border:none;" onclick="salvaBranoCompleto()">💾 SALVA BRANO IN SCALETTA</button>
+
+    <div class="section">
+        <div class="section-title">Scaletta della Serata</div>
+        <div class="setlist" id="setlistContainer"></div>
+        <div class="msg" id="storageMsg"></div>
+    </div>
+</div>
+<script>
+    // ===== STATO =====
+    let audioCtx = null, isPlaying = false, currentBpm = 120, nextNoteTime = 0.0, timerId = null;
+    let currentBeatInMeasure = 0, currentMeasure = 1, beatsPerMeasure = 4;
+    let comandiTemporanei = [];   // { battuta, audioId, blob }  (blob in memoria finché non salvi il brano)
+    let cambiTemporanei = [];
+    let suonoTema = localStorage.getItem('suono_v37') || 'classico';
+    let accentoOn = localStorage.getItem('accento_v37') !== '0';
+    let tapTimes = [];
+    let scaletta = [];            // metadati: { id, nome, bpm, comandi:[{battuta, audioId}], cambi:[] }
+    let idSelezionato = null;
+    let ultimaRegistrazione = null; // Blob dell'ultima ripresa
+    const KEY = 'scaletta_v38';
+
+    function ctx() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        return audioCtx;
+    }
+    function msg(id, testo, tipo) {
+        const el = document.getElementById(id);
+        el.className = 'msg ' + (tipo || 'info'); el.innerText = testo;
+        clearTimeout(el._t); if (tipo !== 'err') el._t = setTimeout(() => { el.className = 'msg'; }, 6000);
+    }
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function nuovoId() { return 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+    // ===== INDEXEDDB (audio come Blob) =====
+    let dbPromise = null;
+    function db() {
+        if (dbPromise) return dbPromise;
+        dbPromise = new Promise((res, rej) => {
+            if (!window.indexedDB) return rej(new Error('IndexedDB non disponibile'));
+            const r = indexedDB.open('liveclick', 1);
+            r.onupgradeneeded = () => { r.result.createObjectStore('audio'); };
+            r.onsuccess = () => res(r.result);
+            r.onerror = () => rej(r.error);
+        });
+        return dbPromise;
+    }
+    function idb(mode, fn) {
+        return db().then(d => new Promise((res, rej) => {
+            const tx = d.transaction('audio', mode); const st = tx.objectStore('audio');
+            let out; const req = fn(st); if (req) req.onsuccess = () => { out = req.result; };
+            tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('abort'));
+        }));
+    }
+    const audioPut = (id, blob) => idb('readwrite', st => st.put(blob, id));
+    const audioGet = (id) => idb('readonly', st => st.get(id));
+    const audioDel = (id) => idb('readwrite', st => st.delete(id));
+
+    function salva() {
+        try { localStorage.setItem(KEY, JSON.stringify(scaletta)); return true; }
+        catch(e) { alert("⚠️ Salvataggio NON riuscito (memoria del browser piena o bloccata). Le ultime modifiche andranno perse alla chiusura."); return false; }
+    }
+
+    function dataUrlToBlob(dataUrl) {
+        const [hdr, b64] = dataUrl.split(',');
+        const tipo = (hdr.match(/data:([^;]+)/) || [])[1] || 'audio/webm';
+        const bin = atob(b64 || ''); const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Blob([bytes], { type: tipo });
+    }
+
+    // Migrazione dalla v3.7 (audio base64 dentro localStorage)
+    async function migra() {
+        const raw = localStorage.getItem('scaletta_v37');
+        if (!raw || localStorage.getItem(KEY)) return false;
+        let vecchia; try { vecchia = JSON.parse(raw) || []; } catch(e) { return false; }
+        for (const b of vecchia) {
+            const nuovi = [];
+            for (const c of (b.comandi || [])) {
+                if (!c.audio) continue;
+                const id = nuovoId();
+                await audioPut(id, dataUrlToBlob(c.audio));
+                nuovi.push({ battuta: c.battuta, audioId: id });
+            }
+            b.comandi = nuovi; b.cambi = b.cambi || [];
+        }
+        scaletta = vecchia;
+        if (salva()) { try { localStorage.removeItem('scaletta_v37'); } catch(e) {} return true; }
+        return false;
+    }
+
+    async function init() {
+        document.getElementById('soundTheme').value = suonoTema;
+        document.getElementById('accentOn').checked = accentoOn;
+        try {
+            if (await migra()) msg('storageMsg', '✅ Scaletta della v3.7 importata (comandi vocali inclusi).', 'ok');
+        } catch(e) { msg('storageMsg', '⚠️ Importazione dalla v3.7 non riuscita: i vecchi dati restano intatti. ' + e.message, 'err'); }
+        if (!scaletta.length) { try { scaletta = JSON.parse(localStorage.getItem(KEY)) || []; } catch(e) { scaletta = []; } }
+        idSelezionato = scaletta.length ? scaletta[0].id : null;
+        renderScaletta();
+        if (idSelezionato) caricaBrano(idSelezionato); else { renderCambiSelezionato(); renderComandiSelezionato(); }
+        if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+        aggiornaStatoMicrofono();
+    }
+
+    // ===== SCALETTA =====
+    function branoSel() { return scaletta.find(b => b.id === idSelezionato); }
+    function renderScaletta() {
+        const container = document.getElementById('setlistContainer');
+        container.innerHTML = '';
+        if (scaletta.length === 0) {
+            container.innerHTML = '<div style="padding:10px; color:#666;">Scaletta vuota. Crea un brano sopra!</div>';
+            return;
+        }
+        scaletta.forEach((brano, index) => {
+            const div = document.createElement('div');
+            div.className = `song-item ${brano.id === idSelezionato ? 'active' : ''}`;
+            div.onclick = () => caricaBrano(brano.id);
+            let infoComandi = brano.comandi && brano.comandi.length > 0 ? `🎤 ${brano.comandi.length} comandi pronti` : 'Nessun comando';
+            div.innerHTML = `<span>${index + 1}. <strong>${escapeHtml(brano.nome)}</strong> (${brano.bpm} BPM)<br><small style="color:#ff9f43">${infoComandi}</small></span><button class="btn-del" onclick="event.stopPropagation(); deleteSong(${brano.id})">🗑️</button>`;
+            container.appendChild(div);
+        });
+    }
+    function caricaBrano(id) {
+        idSelezionato = id;
+        const brano = branoSel();
+        if (brano) {
+            currentBpm = parseInt(brano.bpm);
+            document.getElementById('liveSongName').innerText = brano.nome.toUpperCase();
+            document.getElementById('liveBpm').innerText = currentBpm;
+            resetConteggio();
+            renderScaletta();
+            precaricaVocali();
+        }
+        aggiornaTastoBpm();
+        renderCambiSelezionato();
+        renderComandiSelezionato();
+    }
+    function aggiornaTastoBpm() {
+        const b = branoSel(), btn = document.getElementById('saveBpmBtn');
+        if (b && parseInt(b.bpm) !== currentBpm) { btn.style.display = 'inline-block'; btn.innerText = `💾 Salva ${currentBpm} BPM nel brano (ora ${b.bpm})`; }
+        else btn.style.display = 'none';
+    }
+    // +/- e TAP cambiano solo il tempo dal vivo
+    function changeBpm(qta) {
+        currentBpm = Math.max(30, Math.min(300, currentBpm + qta));
+        document.getElementById('liveBpm').innerText = currentBpm;
+        aggiornaTastoBpm();
+    }
+    function salvaBpmNelBrano() {
+        const b = branoSel(); if (!b) return;
+        const vecchio = b.bpm; b.bpm = currentBpm;
+        if (!salva()) { b.bpm = vecchio; return; }
+        renderScaletta(); aggiornaTastoBpm();
+    }
+    function prossimoBrano() {
+        const index = scaletta.findIndex(b => b.id === idSelezionato);
+        if (index !== -1 && scaletta[index + 1]) { caricaBrano(scaletta[index + 1].id); } else { alert("Fine della scaletta!"); }
+    }
+
+    async function salvaBranoCompleto() {
+        const nome = document.getElementById('songName').value.trim();
+        const bpm = parseInt(document.getElementById('songBpm').value);
+        if (!nome || isNaN(bpm)) return alert("Inserisci Nome e BPM");
+        if (bpm < 30 || bpm > 300) return alert("BPM tra 30 e 300");
+        const btn = document.getElementById('saveSongBtn'); btn.disabled = true;
+        try {
+            for (const c of comandiTemporanei) await audioPut(c.audioId, c.blob);
+        } catch(e) {
+            btn.disabled = false;
+            return alert("⚠️ Brano NON salvato: impossibile salvare l'audio dei comandi vocali (" + e.message + "). Riprova.");
+        }
+        const nuovoBrano = { id: Date.now(), nome, bpm, comandi: comandiTemporanei.map(c => ({ battuta: c.battuta, audioId: c.audioId })), cambi: [...cambiTemporanei] };
+        scaletta.push(nuovoBrano);
+        if (!salva()) { scaletta.pop(); btn.disabled = false; return; }
+        btn.disabled = false;
+        document.getElementById('songName').value = '';
+        comandiTemporanei = []; aggiornaGraficaComandiTemporanei();
+        cambiTemporanei = []; renderCambi(cambiTemporanei, 'tempTcContainer', 'cambiTemporanei');
+        caricaBrano(nuovoBrano.id);
+        msg('storageMsg', `✅ "${nome}" salvato in scaletta${nuovoBrano.comandi.length ? ` con ${nuovoBrano.comandi.length} comandi vocali` : ''}.`, 'ok');
+    }
+    function deleteSong(id) {
+        const b = scaletta.find(x => x.id === id);
+        if (!b || !confirm(`Eliminare "${b.nome}" dalla scaletta?`)) return;
+        scaletta = scaletta.filter(x => x.id !== id);
+        if (!salva()) return;
+        (b.comandi || []).forEach(c => audioDel(c.audioId).catch(() => {}));
+        if (scaletta.length > 0) caricaBrano(scaletta[0].id);
+        else {
+            idSelezionato = null;
+            document.getElementById('liveSongName').innerText = 'NESSUN BRANO';
+            renderScaletta(); renderCambiSelezionato(); renderComandiSelezionato(); aggiornaTastoBpm();
+        }
+    }
+
+    // ===== MICROFONO (un solo stream riusato) =====
+    let micStream = null, micTimer = null, mediaRecorder = null, audioChunks = [];
+    const MIC_INATTIVITA_MS = 3 * 60 * 1000; // dopo 3 minuti senza registrare spegne il microfono
+    function micDisponibile() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
+    async function aggiornaStatoMicrofono() {
+        const el = document.getElementById('micStatus');
+        if (!window.isSecureContext || !navigator.mediaDevices) { el.innerText = "⚠️ Microfono non disponibile: apri l'app dal suo indirizzo https (non dal file scaricato)."; return; }
+        if (!window.MediaRecorder) { el.innerText = "⚠️ Questo browser non sa registrare audio. Aggiorna il browser."; return; }
+        if (micStream && micStream.active) { el.innerText = "🎤 Microfono: attivo (pronto a registrare)"; return; }
+        try {
+            const p = await navigator.permissions.query({ name: 'microphone' });
+            const t = { granted: "✅ Microfono: permesso dato, non verrà richiesto", denied: "⛔ Microfono bloccato: abilitalo dalle impostazioni del sito (lucchetto accanto all'indirizzo)", prompt: "🎤 Microfono: alla prima registrazione il browser chiederà il permesso" };
+            el.innerText = t[p.state] || "🎤 Microfono";
+            p.onchange = aggiornaStatoMicrofono;
+        } catch(e) { el.innerText = "🎤 Microfono: il permesso verrà chiesto alla prima registrazione"; }
+    }
+    async function prendiMicrofono() {
+        if (micStream && micStream.active && micStream.getAudioTracks().some(t => t.readyState === 'live')) return micStream;
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+        return micStream;
+    }
+    function rilasciaMicrofono() {
+        clearTimeout(micTimer);
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') return; // mai durante una registrazione
+        if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+        aggiornaStatoMicrofono();
+    }
+    function programmaRilascio() { clearTimeout(micTimer); micTimer = setTimeout(rilasciaMicrofono, MIC_INATTIVITA_MS); }
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop(); setTimeout(rilasciaMicrofono, 500); } });
+    window.addEventListener('pagehide', () => { if (micStream) micStream.getTracks().forEach(t => t.stop()); });
+
+    function scegliMime() {
+        const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const lista = ios ? ['audio/mp4', 'audio/aac', 'audio/webm;codecs=opus', 'audio/webm']
+                          : ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+        if (!MediaRecorder.isTypeSupported) return '';
+        return lista.find(t => MediaRecorder.isTypeSupported(t)) || '';
+    }
+
+    async function toggleRegistroVocale() {
+        const btn = document.getElementById('recBtn');
+        if (mediaRecorder && mediaRecorder.state === 'recording') { mediaRecorder.stop(); btn.disabled = true; btn.innerText = "⏳ Salvo..."; return; }
+        if (!micDisponibile()) return msg('recMsg', !window.isSecureContext ? "⚠️ Il microfono funziona solo aprendo l'app dal link https (o dall'icona installata), non dal file aperto da WhatsApp o dalla cartella." : "⚠️ Questo browser non supporta la registrazione audio.", 'err');
+        const battuta = parseInt(document.getElementById('triggerBeat').value);
+        if (isNaN(battuta) || battuta < 1) return msg('recMsg', "Metti una battuta valida (1 o più) prima di registrare.", 'err');
+        if (document.getElementById('destSel').checked && !branoSel()) return msg('recMsg', "Nessun brano selezionato in scaletta: scegli 'brano nuovo' o seleziona un brano.", 'err');
+        let stream;
+        try { stream = await prendiMicrofono(); }
+        catch(err) {
+            const negato = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+            return msg('recMsg', negato ? "⛔ Permesso microfono negato. Tocca il lucchetto accanto all'indirizzo (o Impostazioni › Safari › Microfono) e consenti." : "⚠️ Microfono non trovato o occupato: " + (err && err.message), 'err');
+        }
+        clearTimeout(micTimer);
+        const mime = scegliMime();
+        try { mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
+        catch(e) { mediaRecorder = new MediaRecorder(stream); }
+        audioChunks = [];
+        const rec = mediaRecorder;
+        rec.ondataavailable = e => { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
+        rec.onstop = () => {
+            btn.disabled = false; btn.classList.remove('rec-active'); btn.innerText = "🎤 Registra Voce";
+            programmaRilascio(); aggiornaStatoMicrofono();
+            if (audioChunks.length === 0) return msg('recMsg', "Registrazione vuota, riprova (parla almeno un secondo).", 'err');
+            const tipo = (rec.mimeType || audioChunks[0].type || mime || 'audio/webm').split(';')[0];
+            ultimaRegistrazione = new Blob(audioChunks, { type: tipo });
+            document.getElementById('previewLastBtn').disabled = false;
+            associaRegistrazione(ultimaRegistrazione, battuta);
+        };
+        rec.start(250);
+        btn.innerText = "🛑 STOP"; btn.classList.add('rec-active');
+        msg('recMsg', `🔴 Sto registrando per la battuta ${battuta}... premi STOP quando hai finito.`, 'info');
+        aggiornaStatoMicrofono();
+    }
+
+    async function associaRegistrazione(blob, battuta) {
+        const audioId = nuovoId();
+        if (document.getElementById('destSel').checked) {
+            const b = branoSel();
+            if (!b) return msg('recMsg', "Nessun brano selezionato: registrazione non associata.", 'err');
+            try { await audioPut(audioId, blob); }
+            catch(e) { return msg('recMsg', "⚠️ Voce NON salvata (memoria non disponibile): " + e.message, 'err'); }
+            b.comandi = (b.comandi || []).filter(c => c.battuta !== battuta || (audioDel(c.audioId).catch(() => {}), false));
+            b.comandi.push({ battuta, audioId }); b.comandi.sort((x, y) => x.battuta - y.battuta);
+            if (!salva()) return;
+            renderScaletta(); renderComandiSelezionato(); precaricaVocali();
+            msg('recMsg', `✅ Voce salvata in "${b.nome}" alla battuta ${battuta}.`, 'ok');
+        } else {
+            comandiTemporanei = comandiTemporanei.filter(c => c.battuta !== battuta);
+            comandiTemporanei.push({ battuta, audioId, blob });
+            aggiornaGraficaComandiTemporanei();
+            msg('recMsg', `✅ Voce associata alla battuta ${battuta} del brano nuovo. Ricordati di premere 💾 SALVA BRANO IN SCALETTA.`, 'ok');
+        }
+        const tb = document.getElementById('triggerBeat'); tb.value = battuta + 4; // proposta per il prossimo comando
+    }
+
+    function ascoltaBlob(blob) {
+        if (!blob) return;
+        ctx();
+        blob.arrayBuffer().then(ab => decodifica(ab)).then(buf => suonaBuffer(buf, 0)).catch(() => {
+            const a = new Audio(URL.createObjectURL(blob)); a.play().catch(e => console.log(e));
+        });
+    }
+    function ascoltaUltima() { ascoltaBlob(ultimaRegistrazione); }
+    function ascoltaTemp(idx) { const c = comandiTemporanei[idx]; if (c) ascoltaBlob(c.blob); }
+    async function ascoltaSel(idx) {
+        const b = branoSel(); const c = b && b.comandi[idx]; if (!c) return;
+        try { const blob = await audioGet(c.audioId); if (!blob) return alert("Audio di questo comando non trovato."); ascoltaBlob(blob); } catch(e) { alert("Errore lettura audio: " + e.message); }
+    }
+    function rimuoviComandoSel(idx) {
+        const b = branoSel(); if (!b) return;
+        const [c] = b.comandi.splice(idx, 1);
+        if (!salva()) { b.comandi.splice(idx, 0, c); return; }
+        audioDel(c.audioId).catch(() => {}); bufferVocali.delete(c.audioId);
+        renderScaletta(); renderComandiSelezionato();
+    }
+    function aggiornaGraficaComandiTemporanei() {
+        const container = document.getElementById('tempCmdsContainer');
+        if (comandiTemporanei.length === 0) { container.innerHTML = "Nessun comando vocale pronto."; return; }
+        comandiTemporanei.sort((a,b) => a.battuta - b.battuta);
+        container.innerHTML = '';
+        comandiTemporanei.forEach((cmd, idx) => {
+            const div = document.createElement('div'); div.className = 'cmd-item';
+            div.innerHTML = `<span>🎤 Battuta ${cmd.battuta}</span> <span class="acts"><span onclick="ascoltaTemp(${idx})">▶️</span><span style="color:#ff2e63;" onclick="comandiTemporanei.splice(${idx},1); aggiornaGraficaComandiTemporanei();">❌</span></span>`;
+            container.appendChild(div);
+        });
+    }
+    function renderComandiSelezionato() {
+        const container = document.getElementById('selCmdsContainer');
+        const b = branoSel(); const lista = (b && b.comandi) || [];
+        if (!lista.length) { container.innerHTML = b ? "Nessun comando vocale." : "Nessun brano selezionato."; return; }
+        container.innerHTML = '';
+        lista.forEach((cmd, idx) => {
+            const div = document.createElement('div'); div.className = 'cmd-item';
+            div.innerHTML = `<span>🎤 Battuta ${cmd.battuta}</span> <span class="acts"><span onclick="ascoltaSel(${idx})">▶️</span><span style="color:#ff2e63;" onclick="rimuoviComandoSel(${idx})">❌</span></span>`;
+            container.appendChild(div);
+        });
+    }
+
+    // ===== RIPRODUZIONE VOCI =====
+    const bufferVocali = new Map(); // audioId -> Promise<AudioBuffer|null>
+    function decodifica(ab) {
+        return new Promise((res, rej) => { const pr = audioCtx.decodeAudioData(ab, res, rej); if (pr && pr.then) pr.then(res, rej); });
+    }
+    function caricaVocale(audioId) {
+        if (!audioCtx || !audioId) return Promise.resolve(null);
+        if (bufferVocali.has(audioId)) return bufferVocali.get(audioId);
+        const p = audioGet(audioId).then(blob => blob ? blob.arrayBuffer() : null).then(ab => ab ? decodifica(ab) : null)
+            .catch(e => { console.log('decode fallita', e); bufferVocali.delete(audioId); return null; });
+        bufferVocali.set(audioId, p);
+        return p;
+    }
+    function precaricaVocali() { const b = branoSel(); if (b && b.comandi && audioCtx) b.comandi.forEach(c => caricaVocale(c.audioId)); }
+    function suonaBuffer(buf, time) {
+        if (!buf) return;
+        const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(audioCtx.destination);
+        src.start(Math.max(audioCtx.currentTime, time || 0));
+    }
+    function riproduciVocale(audioId, time) { caricaVocale(audioId).then(buf => suonaBuffer(buf, time)); }
+
+    function playClick(time) {
+        suonaClick(time, currentBeatInMeasure === 0 && accentoOn);
+        if (currentBeatInMeasure === 0) {
+            const b = branoSel();
+            if (b && b.comandi) b.comandi.filter(c => c.battuta === currentMeasure).forEach(c => riproduciVocale(c.audioId, time));
+        }
+        const m = currentMeasure, bt = currentBeatInMeasure + 1, bpmOra = Math.round(tempoCorrente());
+        setTimeout(() => {
+            if (!isPlaying) return;
+            document.getElementById('liveBeat').innerText = `Battuta: ${m}.${bt}`;
+            document.getElementById('liveBpm').innerText = bpmOra;
+        }, Math.max(0, (time - audioCtx.currentTime) * 1000));
+    }
+    function scheduler() {
+        while (nextNoteTime < audioCtx.currentTime + 0.1) {
+            const durata = 60.0 / tempoCorrente(); // tempo del battito che sta per suonare
+            playClick(nextNoteTime);
+            currentBeatInMeasure++;
+            if (currentBeatInMeasure >= beatsPerMeasure) { currentBeatInMeasure = 0; currentMeasure++; }
+            nextNoteTime += durata;
+        }
+        timerId = setTimeout(scheduler, 25);
+    }
+    function resetConteggio() { currentBeatInMeasure = 0; currentMeasure = 1; document.getElementById('liveBeat').innerText = `Battuta: 1.1`; }
+    function toggleMetronome() {
+        ctx();
+        const btn = document.getElementById('startBtn');
+        if (isPlaying) {
+            clearTimeout(timerId); isPlaying = false;
+            document.getElementById('liveBpm').innerText = currentBpm;
+            btn.innerText = "AVVIA"; btn.classList.remove('playing');
+        } else {
+            resetConteggio(); precaricaVocali();
+            nextNoteTime = audioCtx.currentTime + 0.05; isPlaying = true;
+            scheduler();
+            btn.innerText = "STOP"; btn.classList.add('playing');
+        }
+    }
+
+    // ===== CAMBI DI TEMPO =====
+    function cambiDelBrano() { const b = branoSel(); return (b && b.cambi) ? b.cambi : []; }
+    function tempoCorrente() {
+        const pos = currentMeasure + currentBeatInMeasure / beatsPerMeasure;
+        let bpm = currentBpm;
+        const lista = [...cambiDelBrano()].sort((a,b) => a.battuta - b.battuta);
+        for (const c of lista) {
+            const inizio = c.battuta, rampa = c.rampa || 0;
+            if (pos < inizio) break;
+            if (rampa > 0 && pos < inizio + rampa) { bpm = bpm + (c.bpm - bpm) * ((pos - inizio) / rampa); break; }
+            bpm = c.bpm;
+        }
+        return Math.max(30, Math.min(300, bpm));
+    }
+    function aggiungiCambioTempo(alSelezionato) {
+        const battuta = parseInt(document.getElementById('tcBar').value);
+        const bpm = parseInt(document.getElementById('tcBpm').value);
+        const rampa = Math.max(0, parseInt(document.getElementById('tcRamp').value) || 0);
+        if (isNaN(battuta) || battuta < 1) return alert("Metti una battuta valida");
+        if (isNaN(bpm) || bpm < 30 || bpm > 300) return alert("BPM tra 30 e 300");
+        const cambio = { battuta, bpm, rampa };
+        if (alSelezionato) {
+            const b = branoSel();
+            if (!b) return alert("Nessun brano selezionato in scaletta");
+            if (!b.cambi) b.cambi = [];
+            b.cambi.push(cambio); b.cambi.sort((x,y) => x.battuta - y.battuta);
+            if (!salva()) b.cambi.splice(b.cambi.indexOf(cambio), 1);
+            renderCambiSelezionato();
+        } else {
+            cambiTemporanei.push(cambio); cambiTemporanei.sort((x,y) => x.battuta - y.battuta);
+            renderCambi(cambiTemporanei, 'tempTcContainer', 'cambiTemporanei');
+        }
+    }
+    function testoCambio(c) { return `Battuta ${c.battuta} → ${c.bpm} BPM${c.rampa > 0 ? ` (graduale in ${c.rampa} batt.)` : ''}`; }
+    function renderCambi(lista, containerId, tipo) {
+        const container = document.getElementById(containerId);
+        if (!lista.length) { container.innerHTML = "Nessun cambio di tempo."; return; }
+        container.innerHTML = '';
+        lista.forEach((c, idx) => {
+            const div = document.createElement('div'); div.className = 'cmd-item';
+            div.innerHTML = `<span>⏱️ ${testoCambio(c)}</span> <span style="color:#ff2e63; cursor:pointer;" onclick="rimuoviCambio('${tipo}', ${idx})">❌</span>`;
+            container.appendChild(div);
+        });
+    }
+    function rimuoviCambio(tipo, idx) {
+        if (tipo === 'cambiTemporanei') { cambiTemporanei.splice(idx,1); renderCambi(cambiTemporanei, 'tempTcContainer', tipo); }
+        else { const b = branoSel(); if (b && b.cambi) { const [c] = b.cambi.splice(idx,1); if (!salva()) b.cambi.splice(idx,0,c); renderCambiSelezionato(); } }
+    }
+    function renderCambiSelezionato() { renderCambi(cambiDelBrano(), 'selTcContainer', 'selezionato'); }
+
+    // ===== TAP TEMPO =====
+    function tapTempo(e) {
+        if (e) e.preventDefault();
+        const ora = performance.now();
+        if (tapTimes.length && ora - tapTimes[tapTimes.length - 1] > 2000) tapTimes = [];
+        tapTimes.push(ora);
+        if (tapTimes.length > 4) tapTimes.shift();
+        const btn = document.getElementById('tapBtn');
+        btn.classList.add('flash'); setTimeout(() => btn.classList.remove('flash'), 90);
+        const info = document.getElementById('tapInfo');
+        if (tapTimes.length < 4) { info.innerText = `Tap ${tapTimes.length}/4...`; return; }
+        const media = (tapTimes[3] - tapTimes[0]) / 3;
+        const nuovo = Math.max(30, Math.min(300, Math.round(60000 / media)));
+        changeBpm(nuovo - currentBpm);
+        info.innerText = `BPM impostati: ${nuovo} (continua a toccare per affinare)`;
+    }
+
+    // ===== SUONI DEL CLICK =====
+    function provaSuono() {
+        ctx();
+        const t = audioCtx.currentTime + 0.05, dt = 0.35;
+        for (let i = 0; i < 4; i++) suonaClick(t + i * dt, i === 0 && accentoOn);
+    }
+    function salvaSuono() {
+        suonoTema = document.getElementById('soundTheme').value;
+        accentoOn = document.getElementById('accentOn').checked;
+        try { localStorage.setItem('suono_v37', suonoTema); localStorage.setItem('accento_v37', accentoOn ? '1' : '0'); } catch(e) {}
+    }
+    let bufferRumore = null;
+    function rumore() {
+        if (bufferRumore && bufferRumore.sampleRate === audioCtx.sampleRate) return bufferRumore;
+        const len = Math.floor(audioCtx.sampleRate * 0.2);
+        bufferRumore = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const d = bufferRumore.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        return bufferRumore;
+    }
+    function tono(time, freq, dur, vol, tipo, dest) {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = tipo || 'sine'; o.frequency.setValueAtTime(freq, time);
+        g.gain.setValueAtTime(vol, time); g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+        o.connect(g); g.connect(dest || audioCtx.destination);
+        o.start(time); o.stop(time + dur + 0.01);
+        return o;
+    }
+    function soffio(time, dur, vol, filtroTipo, freq, q) {
+        const s = audioCtx.createBufferSource(); s.buffer = rumore();
+        const f = audioCtx.createBiquadFilter(); f.type = filtroTipo; f.frequency.value = freq; if (q) f.Q.value = q;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(vol, time); g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+        s.connect(f); f.connect(g); g.connect(audioCtx.destination);
+        s.start(time); s.stop(time + dur + 0.01);
+    }
+    function suonaClick(time, acc) {
+        const k = acc ? 1.4 : 1;
+        switch (suonoTema) {
+            case 'legno':
+                tono(time, acc ? 1100 : 800, 0.06, 0.5, 'sine');
+                tono(time, acc ? 2400 : 1800, 0.02, 0.15, 'triangle'); break;
+            case 'clave':
+                tono(time, acc ? 2900 : 2500, 0.05, 0.45, 'sine'); break;
+            case 'hihat':
+                soffio(time, acc ? 0.09 : 0.05, 0.4 * k, 'highpass', 7000); break;
+            case 'cowbell': {
+                const f = audioCtx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = acc ? 900 : 800; f.Q.value = 2;
+                f.connect(audioCtx.destination);
+                tono(time, acc ? 600 : 540, 0.25, 0.5, 'square', f);
+                tono(time, acc ? 900 : 810, 0.25, 0.5, 'square', f); break;
+            }
+            case 'rimshot':
+                tono(time, acc ? 500 : 420, 0.03, 0.4, 'triangle');
+                soffio(time, 0.04, 0.35 * k, 'bandpass', 2500, 1.5); break;
+            case 'soft':
+                tono(time, acc ? 880 : 660, 0.12, 0.25 * k, 'sine'); break;
+            default: // classico
+                tono(time, acc ? 1000 : 550, 0.05, 0.4, 'sine');
+        }
+    }
+
+    init();
+    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(e => console.log('SW', e));
+</script>
+</body>
+</html>
