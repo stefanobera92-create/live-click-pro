@@ -11,7 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="Live Click">
-    <title>Live Click Pro v3.8</title>
+    <title>Live Click Pro v3.9</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 15px; margin: 0; text-align: center; }
         .container { max-width: 480px; margin: auto; background: #1e1e1e; padding: 15px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
@@ -58,7 +58,7 @@
 <body>
 
 <div class="container">
-    <h2>Live Click Pro v3.8 🥁</h2>
+    <h2>Live Click Pro v3.9 🥁</h2>
 
     <div class="live-panel">
         <div class="current-song" id="liveSongName">NESSUN BRANO</div>
@@ -152,6 +152,28 @@
         <div class="setlist" id="setlistContainer"></div>
         <div class="msg" id="storageMsg"></div>
     </div>
+
+    <div class="section" id="backupSection">
+        <div class="section-title">Backup</div>
+        <div class="row">
+            <button class="btn-action" id="exportBtn" style="flex:1;" onclick="esportaScaletta()">📤 Esporta scaletta</button>
+            <button class="btn-action" id="importBtn" style="flex:1;" onclick="document.getElementById('importFile').click()">📥 Importa scaletta</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="scegliFileImport(event)">
+        <div class="row" id="shareRow" style="display:none;">
+            <button class="btn-action" id="shareNowBtn" style="flex:1; background:#00adb5; color:white; border:none;" onclick="condividiFilePronto()">📤 Condividi ora</button>
+            <button class="btn-action" style="flex:1;" onclick="scaricaFilePronto()">⬇️ Scarica</button>
+        </div>
+        <div class="msg" id="backupMsg"></div>
+        <div id="importChoice" style="display:none; margin-top:8px;">
+            <div id="importChoiceText" style="font-size:13px; margin-bottom:8px;"></div>
+            <div class="row" style="flex-wrap:wrap;">
+                <button class="btn-action" id="importReplaceBtn" style="flex:1; background:#ff2e63; color:white; border:none;" onclick="applicaImport('sostituisci')">Sostituisci</button>
+                <button class="btn-action" id="importAddBtn" style="flex:1; background:#00adb5; color:white; border:none;" onclick="applicaImport('aggiungi')">Aggiungi</button>
+                <button class="btn-action" id="importCancelBtn" style="flex:1;" onclick="annullaImport()">Annulla</button>
+            </div>
+        </div>
+    </div>
 </div>
 <script>
     // ===== STATO =====
@@ -165,6 +187,7 @@
     let scaletta = [];            // metadati: { id, nome, bpm, comandi:[{battuta, audioId}], cambi:[] }
     let idSelezionato = null;
     let ultimaRegistrazione = null; // Blob dell'ultima ripresa
+    let importInAttesa = null, importInCorso = false, fileDaCondividere = null;
     const KEY = 'scaletta_v38';
 
     function ctx() {
@@ -212,9 +235,13 @@
     }
 
     function dataUrlToBlob(dataUrl) {
-        const [hdr, b64] = dataUrl.split(',');
+        const raw = String(dataUrl);
+        const comma = raw.indexOf(',');
+        if (comma < 0) throw new Error('data url');
+        const hdr = raw.slice(0, comma);
+        const b64 = raw.slice(comma + 1).replace(/\s/g, '');
         const tipo = (hdr.match(/data:([^;]+)/) || [])[1] || 'audio/webm';
-        const bin = atob(b64 || ''); const bytes = new Uint8Array(bin.length);
+        const bin = atob(b64); const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         return new Blob([bytes], { type: tipo });
     }
@@ -341,6 +368,274 @@
             idSelezionato = null;
             document.getElementById('liveSongName').innerText = 'NESSUN BRANO';
             renderScaletta(); renderCambiSelezionato(); renderComandiSelezionato(); aggiornaTastoBpm();
+        }
+    }
+
+    // ===== BACKUP SCALETTA =====
+    function dataPerFile(d) {
+        d = d || new Date();
+        const p = n => String(n).padStart(2, '0');
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    }
+    function blobToDataUrl(blob) {
+        return new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = () => rej(r.error || new Error('lettura audio'));
+            r.readAsDataURL(blob);
+        });
+    }
+    function nomeFileBackup() { return 'scaletta-live-click-' + dataPerFile() + '.json'; }
+    async function creaFileBackup() {
+        const brani = [];
+        for (const b of scaletta) {
+            const nome = b && typeof b.nome === 'string' ? b.nome.trim() : '';
+            if (!nome) throw new Error('un brano in scaletta non ha un nome.');
+            const bpm = Number(b.bpm);
+            if (!Number.isFinite(bpm)) throw new Error('BPM non validi per "' + nome + '".');
+            const comandi = [];
+            for (const c of (b.comandi || [])) {
+                const blob = await audioGet(c.audioId);
+                if (!blob) throw new Error('manca la registrazione vocale di "' + nome + '" (battuta ' + c.battuta + ').');
+                const tipo = blob.type && blob.type.startsWith('audio/') ? blob.type : 'audio/webm';
+                const audio = await blobToDataUrl(blob.type === tipo ? blob : new Blob([blob], { type: tipo }));
+                comandi.push({ battuta: c.battuta, audio });
+            }
+            comandi.sort((x, y) => x.battuta - y.battuta);
+            const cambi = (b.cambi || []).map(c => ({ battuta: c.battuta, bpm: c.bpm, rampa: c.rampa || 0 }));
+            cambi.sort((x, y) => x.battuta - y.battuta);
+            brani.push({ id: b.id, nome, bpm, comandi, cambi });
+        }
+        const payload = { app: 'Live Click Pro', formato: 1, esportato: new Date().toISOString(), brani };
+        return new File([JSON.stringify(payload)], nomeFileBackup(), { type: 'application/json' });
+    }
+    function scaricaFile(file) {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url; a.download = file.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    function datiCondivisione(file) {
+        const dati = { files: [file], title: 'Live Click Pro', text: 'Backup della scaletta' };
+        try { if (navigator.canShare && navigator.canShare(dati)) return dati; } catch (e) {}
+        return null;
+    }
+    async function condividiOScarica(fileJson) {
+        let dati = datiCondivisione(fileJson);
+        let file = fileJson;
+        if (!dati) {
+            const comeTesto = new File([fileJson], fileJson.name, { type: 'text/plain' });
+            dati = datiCondivisione(comeTesto);
+            if (dati) file = comeTesto;
+        }
+        fileDaCondividere = file;
+        if (!dati) {
+            scaricaFile(fileJson);
+            msg('backupMsg', 'File scaricato: ' + fileJson.name, 'ok');
+            return;
+        }
+        try {
+            await navigator.share(dati);
+            document.getElementById('shareRow').style.display = 'none';
+            msg('backupMsg', 'Scaletta condivisa.', 'ok');
+        } catch (e) {
+            if (e && e.name === 'AbortError') { msg('backupMsg', 'Condivisione annullata.', 'info'); return; }
+            document.getElementById('shareRow').style.display = 'flex';
+            msg('backupMsg', 'Tocca «Condividi ora» per inviare il file (WhatsApp, Drive…) oppure scaricalo.', 'info');
+        }
+    }
+    function condividiFilePronto() {
+        const file = fileDaCondividere;
+        if (!file) return;
+        const dati = datiCondivisione(file) || { files: [file], title: 'Live Click Pro', text: 'Backup della scaletta' };
+        navigator.share(dati).then(() => {
+            document.getElementById('shareRow').style.display = 'none';
+            msg('backupMsg', 'Scaletta condivisa.', 'ok');
+        }).catch(e => {
+            if (e && e.name === 'AbortError') msg('backupMsg', 'Condivisione annullata.', 'info');
+            else msg('backupMsg', 'Condivisione non riuscita. Puoi scaricare il file.', 'err');
+        });
+    }
+    function scaricaFilePronto() {
+        if (!fileDaCondividere) return;
+        const file = fileDaCondividere.type === 'application/json'
+            ? fileDaCondividere
+            : new File([fileDaCondividere], fileDaCondividere.name, { type: 'application/json' });
+        scaricaFile(file);
+        msg('backupMsg', 'File scaricato: ' + file.name, 'ok');
+    }
+    async function esportaScaletta() {
+        if (!scaletta.length) { msg('backupMsg', 'La scaletta è vuota: niente da esportare.', 'info'); return; }
+        const btn = document.getElementById('exportBtn');
+        btn.disabled = true;
+        document.getElementById('shareRow').style.display = 'none';
+        try {
+            const file = await creaFileBackup();
+            await condividiOScarica(file);
+        } catch (e) {
+            msg('backupMsg', 'Esportazione non riuscita: ' + (e.message || 'errore sconosciuto.'), 'err');
+        } finally { btn.disabled = false; }
+    }
+    function erroreBackup(testo) { const err = new Error(testo); err.fileNonValido = true; return err; }
+    function validaBackup(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw erroreBackup('File non valido: non è un backup di Live Click Pro.');
+        if (data.app !== 'Live Click Pro') throw erroreBackup('File non valido: non è un backup di Live Click Pro.');
+        if (data.formato !== 1) throw erroreBackup('File non valido: versione del backup non riconosciuta.');
+        if (!Array.isArray(data.brani)) throw erroreBackup('File non valido: manca l\'elenco dei brani.');
+        if (!data.brani.length) throw erroreBackup('File non valido: non contiene brani.');
+        return data.brani.map((b, i) => validaBranoBackup(b, i));
+    }
+    function validaBranoBackup(b, i) {
+        const dove = 'brano ' + (i + 1);
+        if (!b || typeof b !== 'object') throw erroreBackup('File non valido: ' + dove + ' illeggibile.');
+        const nome = typeof b.nome === 'string' ? b.nome.trim() : '';
+        if (!nome) throw erroreBackup('File non valido: ' + dove + ' senza nome.');
+        const bpm = Number(b.bpm);
+        if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) throw erroreBackup('File non valido: BPM di "' + nome + '" non è tra 30 e 300.');
+        if (b.comandi != null && !Array.isArray(b.comandi)) throw erroreBackup('File non valido: comandi vocali di "' + nome + '" illeggibili.');
+        if (b.cambi != null && !Array.isArray(b.cambi)) throw erroreBackup('File non valido: cambi di tempo di "' + nome + '" illeggibili.');
+        const comandi = (b.comandi || []).map(c => validaComandoBackup(c, nome));
+        const cambi = (b.cambi || []).map(c => validaCambioBackup(c, nome));
+        return { id: b.id, nome, bpm: Math.round(bpm), comandi, cambi };
+    }
+    function validaComandoBackup(c, nome) {
+        if (!c || typeof c !== 'object') throw erroreBackup('File non valido: comando vocale di "' + nome + '" illeggibile.');
+        const battuta = Number(c.battuta);
+        if (!Number.isInteger(battuta) || battuta < 1) throw erroreBackup('File non valido: battuta del comando vocale in "' + nome + '" non valida.');
+        const audio = typeof c.audio === 'string' ? c.audio.trim() : '';
+        if (!/^data:audio\/[\w.+-]+(?:;[^,]*)?;base64,/.test(audio)) throw erroreBackup('File non valido: audio del comando in "' + nome + '" (battuta ' + battuta + ') mancante o non in base64.');
+        let blob;
+        try { blob = dataUrlToBlob(audio); }
+        catch (e) { throw erroreBackup('File non valido: audio di "' + nome + '" (battuta ' + battuta + ') danneggiato.'); }
+        if (!blob.size) throw erroreBackup('File non valido: audio di "' + nome + '" (battuta ' + battuta + ') vuoto.');
+        return { battuta, blob };
+    }
+    function validaCambioBackup(c, nome) {
+        if (!c || typeof c !== 'object') throw erroreBackup('File non valido: cambio di tempo di "' + nome + '" illeggibile.');
+        const battuta = Number(c.battuta);
+        const bpm = Number(c.bpm);
+        const rampa = c.rampa == null || c.rampa === '' ? 0 : Number(c.rampa);
+        if (!Number.isInteger(battuta) || battuta < 1) throw erroreBackup('File non valido: battuta del cambio di tempo in "' + nome + '" non valida.');
+        if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) throw erroreBackup('File non valido: BPM del cambio di tempo in "' + nome + '" non è tra 30 e 300.');
+        if (!Number.isInteger(rampa) || rampa < 0) throw erroreBackup('File non valido: rampa del cambio di tempo in "' + nome + '" non valida.');
+        return { battuta, bpm: Math.round(bpm), rampa };
+    }
+    function nascondiSceltaImport() {
+        importInAttesa = null;
+        const box = document.getElementById('importChoice');
+        if (box) box.style.display = 'none';
+    }
+    async function scegliFileImport(ev) {
+        const input = ev.target;
+        const file = input.files && input.files[0];
+        input.value = '';
+        if (!file || importInCorso) return;
+        nascondiSceltaImport();
+        try {
+            if (file.size > 40 * 1024 * 1024) throw erroreBackup('File non valido: il file è troppo grande (oltre 40 MB).');
+            let testo;
+            try { testo = (await file.text()).replace(/^\uFEFF/, ''); }
+            catch (e) { throw erroreBackup('File non valido: impossibile leggere il file.'); }
+            let data;
+            try { data = JSON.parse(testo); }
+            catch (e) { throw erroreBackup('File non valido: non è un JSON leggibile.'); }
+            const brani = validaBackup(data);
+            importInAttesa = { brani, nomeFile: file.name };
+            const n = brani.length;
+            document.getElementById('importChoiceText').textContent = (n === 1 ? 'Trovato 1 brano' : 'Trovati ' + n + ' brani') + ' in "' + file.name + '". Sostituire la scaletta attuale o aggiungere i brani?';
+            document.getElementById('importChoice').style.display = 'block';
+            msg('backupMsg', 'File letto. Scegli se sostituire o aggiungere.', 'info');
+        } catch (e) {
+            nascondiSceltaImport();
+            msg('backupMsg', e.fileNonValido ? e.message : 'File non valido: ' + (e.message || 'formato sconosciuto.'), 'err');
+        }
+    }
+    function annullaImport() {
+        if (importInCorso) return;
+        nascondiSceltaImport();
+        msg('backupMsg', 'Importazione annullata.', 'info');
+    }
+    function assegnaId(proposto, usati) {
+        let id = Number(proposto);
+        if (!Number.isInteger(id) || id <= 0 || usati.has(id)) {
+            id = Date.now();
+            while (usati.has(id)) id++;
+        }
+        usati.add(id);
+        return id;
+    }
+    function copiaScaletta(lista) {
+        return lista.map(b => ({
+            id: b.id, nome: b.nome, bpm: b.bpm,
+            comandi: (b.comandi || []).map(c => ({ battuta: c.battuta, audioId: c.audioId })),
+            cambi: (b.cambi || []).map(c => ({ battuta: c.battuta, bpm: c.bpm, rampa: c.rampa || 0 }))
+        }));
+    }
+    function mostraScalettaDopoImport(modo, idPrima) {
+        if (!scaletta.length) {
+            idSelezionato = null;
+            document.getElementById('liveSongName').innerText = 'NESSUN BRANO';
+            renderScaletta(); renderCambiSelezionato(); renderComandiSelezionato(); aggiornaTastoBpm();
+            return;
+        }
+        if (modo === 'sostituisci' || !scaletta.some(b => b.id === idPrima)) caricaBrano(scaletta[0].id);
+        else renderScaletta();
+    }
+    async function applicaImport(modo) {
+        const attesa = importInAttesa;
+        if (!attesa || importInCorso || (modo !== 'sostituisci' && modo !== 'aggiungi')) return;
+        importInCorso = true;
+        const bottoni = document.querySelectorAll('#importChoice button');
+        bottoni.forEach(b => { b.disabled = true; });
+        const scritti = [];
+        const precedente = copiaScaletta(scaletta);
+        const idPrima = idSelezionato;
+        const vecchiAudio = precedente.flatMap(b => (b.comandi || []).map(c => c.audioId));
+        try {
+            const usati = new Set(modo === 'aggiungi' ? scaletta.map(b => b.id) : []);
+            const preparati = [];
+            for (const b of attesa.brani) {
+                const comandi = [];
+                for (const c of b.comandi) {
+                    const audioId = nuovoId();
+                    await audioPut(audioId, c.blob);
+                    scritti.push(audioId);
+                    comandi.push({ battuta: c.battuta, audioId });
+                }
+                comandi.sort((x, y) => x.battuta - y.battuta);
+                const cambi = b.cambi.map(c => ({ battuta: c.battuta, bpm: c.bpm, rampa: c.rampa || 0 })).sort((x, y) => x.battuta - y.battuta);
+                preparati.push({ id: assegnaId(b.id, usati), nome: b.nome, bpm: b.bpm, comandi, cambi });
+            }
+            const nuova = modo === 'sostituisci' ? preparati : scaletta.concat(preparati);
+            try { localStorage.setItem(KEY, JSON.stringify(nuova)); }
+            catch (e) { const err = new Error('MEMORIA'); throw err; }
+            scaletta = nuova;
+            if (modo === 'sostituisci') bufferVocali.clear();
+            importInAttesa = null;
+            document.getElementById('importChoice').style.display = 'none';
+            mostraScalettaDopoImport(modo, idPrima);
+            if (modo === 'sostituisci') {
+                const tenuti = new Set(scritti);
+                vecchiAudio.forEach(id => { if (!tenuti.has(id)) audioDel(id).catch(() => {}); });
+            }
+            const n = preparati.length;
+            msg('backupMsg', modo === 'sostituisci'
+                ? (n === 1 ? 'Scaletta sostituita: 1 brano importato.' : 'Scaletta sostituita: ' + n + ' brani importati.')
+                : (n === 1 ? 'Aggiunto 1 brano alla scaletta.' : 'Aggiunti ' + n + ' brani alla scaletta.'), 'ok');
+        } catch (e) {
+            console.log('import', e);
+            await Promise.all(scritti.map(id => audioDel(id).catch(() => {})));
+            scaletta = precedente;
+            idSelezionato = idPrima;
+            try { localStorage.setItem(KEY, JSON.stringify(precedente)); } catch (e2) {}
+            const memoria = e && e.message === 'MEMORIA';
+            msg('backupMsg', memoria
+                ? 'Importazione non riuscita: memoria del browser piena o bloccata. La scaletta attuale è rimasta invariata.'
+                : 'Importazione non riuscita: impossibile salvare l\'audio nel browser. La scaletta attuale è rimasta invariata.', 'err');
+        } finally {
+            importInCorso = false;
+            bottoni.forEach(b => { b.disabled = false; });
         }
     }
 
@@ -671,8 +966,32 @@
         }
     }
 
+    function mostraAggiornamento() {
+        if (document.getElementById('updateBar')) return;
+        const bar = document.createElement('div');
+        bar.id = 'updateBar';
+        bar.className = 'msg info';
+        bar.style.cssText = 'display:block; margin:0 auto 12px; max-width:480px; text-align:center;';
+        bar.innerHTML = 'È disponibile una nuova versione. <button type="button" class="btn-action" onclick="location.reload()">Ricarica</button>';
+        const c = document.querySelector('.container');
+        c.insertBefore(bar, c.firstChild);
+    }
+    function avviaServiceWorker() {
+        if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+        let giaAttivo = !!navigator.serviceWorker.controller;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!giaAttivo) { giaAttivo = true; return; }
+            mostraAggiornamento();
+        });
+        navigator.serviceWorker.register('sw.js').then(reg => {
+            const aggiorna = () => { reg.update().catch(() => {}); };
+            aggiorna();
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) aggiorna(); });
+        }).catch(e => console.log('SW', e));
+    }
+
     init();
-    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(e => console.log('SW', e));
+    avviaServiceWorker();
 </script>
 </body>
 </html>
