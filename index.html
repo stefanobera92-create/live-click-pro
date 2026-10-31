@@ -11,7 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="Live Click">
-    <title>Live Click Pro v3.9</title>
+    <title>Live Click Pro v3.10</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 15px; margin: 0; text-align: center; }
         .container { max-width: 480px; margin: auto; background: #1e1e1e; padding: 15px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
@@ -20,6 +20,8 @@
         .current-song { font-size: 20px; color: #ff2e63; font-weight: bold; }
         .bpm-display { font-size: 54px; font-weight: bold; color: #00adb5; margin: 5px 0; }
         .beat-counter { font-size: 22px; color: #ff9f43; margin-bottom: 10px; font-weight: bold; }
+        .beat-counter.pre { color: #ffe66d; background: #3a3418; border-radius: 8px; display: inline-block; padding: 2px 12px; }
+        .pre-hint { font-size: 12px; color: #ffe66d; margin: -4px 0 10px; }
         .bpm-controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
         .btn-speed { background: #333; color: white; border: 1px solid #444; font-size: 20px; width: 55px; height: 55px; border-radius: 50%; cursor: pointer; }
         .btn-speed:active { background: #00adb5; }
@@ -58,12 +60,13 @@
 <body>
 
 <div class="container">
-    <h2>Live Click Pro v3.9 🥁</h2>
+    <h2>Live Click Pro v3.10 🥁</h2>
 
     <div class="live-panel">
         <div class="current-song" id="liveSongName">NESSUN BRANO</div>
         <div class="bpm-display" id="liveBpm">120</div>
         <div class="beat-counter" id="liveBeat">Battuta: 1.1</div>
+        <div class="pre-hint" id="preHint">All'avvio: 2 battute di pre-conteggio</div>
 
         <div class="bpm-controls">
             <button class="btn-speed" onclick="changeBpm(-5)">-5</button>
@@ -93,6 +96,21 @@
         </select>
         <label style="display:flex; align-items:center; gap:8px; font-size:14px;"><input type="checkbox" id="accentOn" onchange="salvaSuono()" style="width:auto; margin:0;"> Accento sul primo battito</label>
         <button class="btn-action" style="margin-top:8px;" onclick="provaSuono()">▶️ Prova suono</button>
+    </div>
+
+    <div class="section" id="preSection">
+        <div class="section-title">Pre-conteggio</div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px; margin-bottom:8px;"><input type="checkbox" id="preOn" checked onchange="salvaPre()" style="width:auto; margin:0;"> Pre-conteggio attivo</label>
+        <div class="row">
+            <span style="font-size:13px;">Battute da 4</span>
+            <select id="preBars" onchange="salvaPre()" style="width:160px; margin:0;">
+                <option value="0">0 — nessuno</option>
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="4">4</option>
+            </select>
+        </div>
+        <div style="font-size:12px; color:#aaa;">Le prime battute sono solo click, per sentire il tempo. L'ultima ha un click più alto: lì conti con le bacchette. Poi parte la battuta 1 del brano. Sempre 4 colpi, al BPM di partenza.</div>
     </div>
 
     <div class="section">
@@ -179,6 +197,9 @@
     // ===== STATO =====
     let audioCtx = null, isPlaying = false, currentBpm = 120, nextNoteTime = 0.0, timerId = null;
     let currentBeatInMeasure = 0, currentMeasure = 1, beatsPerMeasure = 4;
+    let preAttivo = true, preBattute = 2;          // impostazione: acceso, 2 battute da 4
+    let inPreconto = false, preBarra = 1, preBeat = 0, preTotalRun = 0, runId = 0;
+    const BATTITI_PRE = 4;
     let comandiTemporanei = [];   // { battuta, audioId, blob }  (blob in memoria finché non salvi il brano)
     let cambiTemporanei = [];
     let suonoTema = localStorage.getItem('suono_v37') || 'classico';
@@ -269,13 +290,17 @@
     async function init() {
         document.getElementById('soundTheme').value = suonoTema;
         document.getElementById('accentOn').checked = accentoOn;
+        leggiPre();
+        document.getElementById('preOn').checked = preAttivo;
+        document.getElementById('preBars').value = String(preBattute);
+        document.getElementById('preHint').innerText = testoAiutoPre();
         try {
             if (await migra()) msg('storageMsg', '✅ Scaletta della v3.7 importata (comandi vocali inclusi).', 'ok');
         } catch(e) { msg('storageMsg', '⚠️ Importazione dalla v3.7 non riuscita: i vecchi dati restano intatti. ' + e.message, 'err'); }
         if (!scaletta.length) { try { scaletta = JSON.parse(localStorage.getItem(KEY)) || []; } catch(e) { scaletta = []; } }
         idSelezionato = scaletta.length ? scaletta[0].id : null;
         renderScaletta();
-        if (idSelezionato) caricaBrano(idSelezionato); else { renderCambiSelezionato(); renderComandiSelezionato(); }
+        if (idSelezionato) caricaBrano(idSelezionato); else { renderCambiSelezionato(); renderComandiSelezionato(); resetConteggio(); }
         if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
         aggiornaStatoMicrofono();
     }
@@ -406,7 +431,11 @@
             cambi.sort((x, y) => x.battuta - y.battuta);
             brani.push({ id: b.id, nome, bpm, comandi, cambi });
         }
-        const payload = { app: 'Live Click Pro', formato: 1, esportato: new Date().toISOString(), brani };
+        const payload = {
+            app: 'Live Click Pro', formato: 1, esportato: new Date().toISOString(),
+            impostazioni: { preConteggio: !!preAttivo, preBattute: preBattute },
+            brani
+        };
         return new File([JSON.stringify(payload)], nomeFileBackup(), { type: 'application/json' });
     }
     function scaricaFile(file) {
@@ -478,6 +507,28 @@
         } finally { btn.disabled = false; }
     }
     function erroreBackup(testo) { const err = new Error(testo); err.fileNonValido = true; return err; }
+    function leggiImpostazioniBackup(data) {
+        const s = data && data.impostazioni;
+        if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+        const out = {};
+        if (typeof s.preConteggio === 'boolean') out.preConteggio = s.preConteggio;
+        const n = Number(s.preBattute);
+        if ([0, 1, 2, 4].includes(n)) out.preBattute = n;
+        return out;
+    }
+    function applicaImpostazioni(imp) {
+        if (!imp) return;
+        if (typeof imp.preConteggio === 'boolean') preAttivo = imp.preConteggio;
+        if ([0, 1, 2, 4].includes(imp.preBattute)) preBattute = imp.preBattute;
+        try {
+            localStorage.setItem('pre_v310', preAttivo ? '1' : '0');
+            localStorage.setItem('pre_barre_v310', String(preBattute));
+        } catch (e) {}
+        const on = document.getElementById('preOn'), bars = document.getElementById('preBars'), hint = document.getElementById('preHint');
+        if (on) on.checked = preAttivo;
+        if (bars) bars.value = String(preBattute);
+        if (hint) hint.innerText = testoAiutoPre();
+    }
     function validaBackup(data) {
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw erroreBackup('File non valido: non è un backup di Live Click Pro.');
         if (data.app !== 'Live Click Pro') throw erroreBackup('File non valido: non è un backup di Live Click Pro.');
@@ -541,7 +592,7 @@
             try { data = JSON.parse(testo); }
             catch (e) { throw erroreBackup('File non valido: non è un JSON leggibile.'); }
             const brani = validaBackup(data);
-            importInAttesa = { brani, nomeFile: file.name };
+            importInAttesa = { brani, nomeFile: file.name, impostazioni: leggiImpostazioniBackup(data) };
             const n = brani.length;
             document.getElementById('importChoiceText').textContent = (n === 1 ? 'Trovato 1 brano' : 'Trovati ' + n + ' brani') + ' in "' + file.name + '". Sostituire la scaletta attuale o aggiungere i brani?';
             document.getElementById('importChoice').style.display = 'block';
@@ -612,6 +663,7 @@
             catch (e) { const err = new Error('MEMORIA'); throw err; }
             scaletta = nuova;
             if (modo === 'sostituisci') bufferVocali.clear();
+            applicaImpostazioni(attesa.impostazioni);
             importInAttesa = null;
             document.getElementById('importChoice').style.display = 'none';
             mostraScalettaDopoImport(modo, idPrima);
@@ -798,7 +850,60 @@
     }
     function riproduciVocale(audioId, time) { caricaVocale(audioId).then(buf => suonaBuffer(buf, time)); }
 
+    function barrePreEffettive() {
+        if (!preAttivo) return 0;
+        return [0, 1, 2, 4].includes(preBattute) ? preBattute : 2;
+    }
+    function testoAiutoPre() {
+        const n = barrePreEffettive();
+        if (!n) return 'Pre-conteggio spento: il brano parte dalla battuta 1.';
+        if (n === 1) return 'All\'avvio: 1 battuta da 4, click alto, per contare con le bacchette. Poi la battuta 1.';
+        return `All'avvio: ${n} battute da 4. Le prime per sentire il tempo, l'ultima (click più alto) per le bacchette.`;
+    }
+    function leggiPre() {
+        let rawOn = null, rawN = null;
+        try { rawOn = localStorage.getItem('pre_v310'); rawN = localStorage.getItem('pre_barre_v310'); } catch (e) {}
+        preAttivo = rawOn === null ? true : rawOn !== '0';
+        const n = Number(rawN);
+        preBattute = rawN !== null && [0, 1, 2, 4].includes(n) ? n : 2;
+    }
+    function salvaPre() {
+        preAttivo = document.getElementById('preOn').checked;
+        const n = Number(document.getElementById('preBars').value);
+        preBattute = [0, 1, 2, 4].includes(n) ? n : 2;
+        try {
+            localStorage.setItem('pre_v310', preAttivo ? '1' : '0');
+            localStorage.setItem('pre_barre_v310', String(preBattute));
+        } catch (e) {}
+        document.getElementById('preHint').innerText = testoAiutoPre();
+        if (!isPlaying) resetConteggio();
+    }
+    function scriviBattuta(pre, barra, battitoPre, misura, battito) {
+        const el = document.getElementById('liveBeat');
+        if (pre) {
+            el.classList.add('pre');
+            el.innerText = `PRE ${barra}/${preTotalRun} · ${battitoPre}`;
+        } else {
+            el.classList.remove('pre');
+            el.innerText = `Battuta: ${misura}.${battito}`;
+        }
+    }
     function playClick(time) {
+        const delay = Math.max(0, (time - audioCtx.currentTime) * 1000);
+        const run = runId;
+        if (inPreconto) {
+            const ultima = preBarra === preTotalRun;
+            suonaClickPre(time, preBeat === 0, ultima);
+            const barra = preBarra, bt = preBeat + 1, tot = preTotalRun, bpmOra = Math.round(Math.max(30, Math.min(300, currentBpm)));
+            setTimeout(() => {
+                if (!isPlaying || run !== runId) return;
+                const el = document.getElementById('liveBeat');
+                el.classList.add('pre');
+                el.innerText = `PRE ${barra}/${tot} · ${bt}`;
+                document.getElementById('liveBpm').innerText = bpmOra;
+            }, delay);
+            return;
+        }
         suonaClick(time, currentBeatInMeasure === 0 && accentoOn);
         if (currentBeatInMeasure === 0) {
             const b = branoSel();
@@ -806,26 +911,55 @@
         }
         const m = currentMeasure, bt = currentBeatInMeasure + 1, bpmOra = Math.round(tempoCorrente());
         setTimeout(() => {
-            if (!isPlaying) return;
-            document.getElementById('liveBeat').innerText = `Battuta: ${m}.${bt}`;
+            if (!isPlaying || run !== runId) return;
+            const el = document.getElementById('liveBeat');
+            el.classList.remove('pre');
+            el.innerText = `Battuta: ${m}.${bt}`;
             document.getElementById('liveBpm').innerText = bpmOra;
-        }, Math.max(0, (time - audioCtx.currentTime) * 1000));
+        }, delay);
+    }
+    function durataBattito() {
+        const bpm = inPreconto ? currentBpm : tempoCorrente();
+        return 60.0 / Math.max(30, Math.min(300, bpm));
     }
     function scheduler() {
         while (nextNoteTime < audioCtx.currentTime + 0.1) {
-            const durata = 60.0 / tempoCorrente(); // tempo del battito che sta per suonare
+            const durata = durataBattito(); // il pre-conteggio resta al BPM di partenza
             playClick(nextNoteTime);
-            currentBeatInMeasure++;
-            if (currentBeatInMeasure >= beatsPerMeasure) { currentBeatInMeasure = 0; currentMeasure++; }
+            if (inPreconto) {
+                preBeat++;
+                if (preBeat >= BATTITI_PRE) {
+                    preBeat = 0;
+                    preBarra++;
+                    if (preBarra > preTotalRun) {
+                        inPreconto = false;
+                        currentMeasure = 1;
+                        currentBeatInMeasure = 0;
+                    }
+                }
+            } else {
+                currentBeatInMeasure++;
+                if (currentBeatInMeasure >= beatsPerMeasure) { currentBeatInMeasure = 0; currentMeasure++; }
+            }
             nextNoteTime += durata;
         }
         timerId = setTimeout(scheduler, 25);
     }
-    function resetConteggio() { currentBeatInMeasure = 0; currentMeasure = 1; document.getElementById('liveBeat').innerText = `Battuta: 1.1`; }
+    function resetConteggio() {
+        runId++;
+        currentBeatInMeasure = 0;
+        currentMeasure = 1;
+        preTotalRun = barrePreEffettive();
+        inPreconto = preTotalRun > 0;
+        preBarra = 1;
+        preBeat = 0;
+        scriviBattuta(inPreconto, 1, 1, 1, 1);
+    }
     function toggleMetronome() {
         ctx();
         const btn = document.getElementById('startBtn');
         if (isPlaying) {
+            runId++;
             clearTimeout(timerId); isPlaying = false;
             document.getElementById('liveBpm').innerText = currentBpm;
             btn.innerText = "AVVIA"; btn.classList.remove('playing');
@@ -939,6 +1073,11 @@
         g.gain.setValueAtTime(vol, time); g.gain.exponentialRampToValueAtTime(0.001, time + dur);
         s.connect(f); f.connect(g); g.connect(audioCtx.destination);
         s.start(time); s.stop(time + dur + 0.01);
+    }
+    // Ultima battuta del pre-conteggio: pitch più alto, così si distingue dalla battuta di ascolto. Nessuna voce.
+    function suonaClickPre(time, sulPrimo, ultimaBarra) {
+        if (!ultimaBarra) { suonaClick(time, sulPrimo && accentoOn); return; }
+        tono(time, sulPrimo ? 1760 : 1320, sulPrimo ? 0.07 : 0.045, sulPrimo ? 0.5 : 0.38, 'sine');
     }
     function suonaClick(time, acc) {
         const k = acc ? 1.4 : 1;

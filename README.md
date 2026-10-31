@@ -21,6 +21,10 @@ Metronomo per il live, con scaletta, cambi di tempo e comandi vocali. È una Pro
 
 Dopo il primo caricamento l'app resta disponibile anche offline e si apre a schermo intero. Se l'app è già installata, all'uscita di una nuova versione compare il tasto **Ricarica**.
 
+## Pre-conteggio
+
+Prima della battuta 1 si possono far sentire delle battute di ingresso, sempre da 4 colpi, al tempo di partenza del brano. È acceso di default con **2 battute**: le prime per sentire il tempo, l'ultima con un click più alto per contare con le bacchette. Sul pannello compare `PRE 1/2`, poi `PRE 2/2`. Si può scegliere **0, 1, 2 o 4** battute, oppure spegnere il pre-conteggio. La scelta resta sul telefono e nel file di backup. Comandi vocali e cambi di tempo restano sulla battuta del brano: niente scatta durante il pre-conteggio.
+
 ## Backup della scaletta
 
 Sotto la scaletta c'è la sezione **Backup**.
