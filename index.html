@@ -11,7 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="Live Click">
-    <title>Live Click Pro v3.11</title>
+    <title>Live Click Pro v3.12</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 15px; margin: 0; text-align: center; }
         .container { max-width: 480px; margin: auto; background: #1e1e1e; padding: 15px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
@@ -22,9 +22,14 @@
         .beat-counter { font-size: 22px; color: #ff9f43; margin-bottom: 10px; font-weight: bold; }
         .beat-counter.pre { color: #ffe66d; background: #3a3418; border-radius: 8px; display: inline-block; padding: 2px 12px; }
         .pre-hint { font-size: 12px; color: #ffe66d; margin: -4px 0 10px; }
-        .bpm-controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
+        .bpm-controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 6px; }
         .btn-speed { background: #333; color: white; border: 1px solid #444; font-size: 20px; width: 55px; height: 55px; border-radius: 50%; cursor: pointer; }
         .btn-speed:active { background: #00adb5; }
+        input[type=range].bpm-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; margin: 0 0 12px; padding: 0; background: transparent; border: none; touch-action: none; }
+        input[type=range].bpm-slider::-webkit-slider-runnable-track { height: 10px; background: #333; border-radius: 8px; }
+        input[type=range].bpm-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 38px; height: 38px; margin-top: -14px; border-radius: 50%; background: #00adb5; border: 3px solid #e8ffff; box-shadow: 0 2px 6px rgba(0,0,0,0.45); }
+        input[type=range].bpm-slider::-moz-range-track { height: 10px; background: #333; border-radius: 8px; border: none; }
+        input[type=range].bpm-slider::-moz-range-thumb { width: 38px; height: 38px; border-radius: 50%; background: #00adb5; border: 3px solid #e8ffff; }
         .btn-main { background: #ff2e63; color: white; border: none; padding: 15px; font-size: 20px; border-radius: 10px; width: 100%; font-weight: bold; cursor: pointer; }
         .btn-main.playing { background: #10ac84; }
         .btn-next-live { background: #00adb5; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 10px; width: 100%; font-weight: bold; margin-top: 10px; cursor: pointer; }
@@ -33,10 +38,16 @@
         input { background: #2d2d2d; border: 1px solid #444; color: white; padding: 8px; border-radius: 5px; font-size: 14px; margin-bottom: 8px; width: 100%; box-sizing: border-box; }
         .row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
         .btn-action { background: #333; color: white; border: 1px solid #555; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        .setlist { max-height: 180px; overflow-y: auto; margin-top: 10px; }
-        .song-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #333; cursor: pointer; }
+        .setlist { max-height: 260px; overflow-y: auto; margin-top: 10px; }
+        .song-item { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 8px 6px; border-bottom: 1px solid #333; cursor: pointer; }
         .song-item.active { background: rgba(0, 173, 181, 0.2); border-left: 4px solid #00adb5; }
-        .btn-del { background: none; border: none; color: #ff2e63; cursor: pointer; font-size: 16px; }
+        .song-item.dragging { opacity: 0.55; outline: 1px dashed #00adb5; }
+        .song-main { flex: 1; min-width: 0; text-align: left; }
+        .song-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+        .drag-handle { cursor: grab; touch-action: none; padding: 10px 6px; color: #bbb; font-size: 20px; user-select: none; -webkit-user-select: none; }
+        .btn-move { background: #333; color: #e0e0e0; border: 1px solid #555; border-radius: 6px; width: 34px; height: 34px; cursor: pointer; font-size: 14px; padding: 0; }
+        .btn-move:disabled { opacity: 0.35; }
+        .btn-del { background: none; border: none; color: #ff2e63; cursor: pointer; font-size: 16px; padding: 6px; }
         .rec-active { background: #ff2e63 !important; animation: pulse 1s infinite; border-color: #ff2e63; }
         .cmd-list { font-size: 13px; background: #1a1a1a; padding: 5px; border-radius: 5px; margin-top: 5px; }
         .cmd-item { display: flex; justify-content: space-between; color: #ff9f43; padding: 4px 0; border-bottom: 1px dashed #333; }
@@ -60,7 +71,7 @@
 <body>
 
 <div class="container">
-    <h2>Live Click Pro v3.11 🥁</h2>
+    <h2>Live Click Pro v3.12 🥁</h2>
 
     <div class="live-panel">
         <div class="current-song" id="liveSongName">NESSUN BRANO</div>
@@ -75,6 +86,7 @@
             <button class="btn-speed" onclick="changeBpm(1)">+1</button>
             <button class="btn-speed" onclick="changeBpm(5)">+5</button>
         </div>
+        <input type="range" id="bpmSlider" class="bpm-slider" min="30" max="300" value="120" step="1" aria-label="BPM" oninput="suSliderBpm()">
 
         <button class="btn-tap" id="tapBtn" onpointerdown="tapTempo(event)">TAP</button>
         <div class="tap-info" id="tapInfo">Tocca 4 volte a tempo per impostare i BPM</div>
@@ -154,7 +166,7 @@
         </div>
         <div class="row">
             <span style="font-size:13px;">Dalla battuta</span><input type="number" id="tcBar" value="5" min="1" style="width:70px;">
-            <span style="font-size:13px;">BPM</span><input type="number" id="tcBpm" value="120" min="30" max="300" style="width:80px;">
+            <span style="font-size:13px;">BPM</span><input type="number" id="tcBpm" value="120" min="30" max="300" step="1" style="width:80px;">
         </div>
         <div class="row">
             <span style="font-size:13px;">Tipo</span>
@@ -172,7 +184,7 @@
             <button class="btn-action" id="tcCancelBtn" style="display:none;" onclick="annullaModificaCambio()">Annulla</button>
         </div>
         <div class="msg" id="tcMsg"></div>
-        <div style="font-size:12px; color:#aaa;">Ogni cambio vale dalla sua battuta fino al successivo. Brano nuovo:</div>
+        <div style="font-size:12px; color:#aaa;">Ogni cambio vale dalla sua battuta fino al successivo. Il BPM può salire o scendere rispetto al tempo di partenza (da 30 a 300). Brano nuovo:</div>
         <div id="tempTcContainer" class="cmd-list">Nessun cambio di tempo.</div>
         <div style="font-size:12px; color:#aaa; margin-top:6px;">Brano selezionato:</div>
         <div id="selTcContainer" class="cmd-list">Nessun cambio di tempo.</div>
@@ -324,6 +336,7 @@
 
     // ===== SCALETTA =====
     function branoSel() { return scaletta.find(b => b.id === idSelezionato); }
+    let dragScaletta = null, ignoraClickScaletta = false;
     function renderScaletta() {
         const container = document.getElementById('setlistContainer');
         container.innerHTML = '';
@@ -333,20 +346,103 @@
         }
         scaletta.forEach((brano, index) => {
             const div = document.createElement('div');
-            div.className = `song-item ${brano.id === idSelezionato ? 'active' : ''}`;
-            div.onclick = () => caricaBrano(brano.id);
-            let infoComandi = brano.comandi && brano.comandi.length > 0 ? `🎤 ${brano.comandi.length} comandi pronti` : 'Nessun comando';
-            div.innerHTML = `<span>${index + 1}. <strong>${escapeHtml(brano.nome)}</strong> (${brano.bpm} BPM)<br><small style="color:#ff9f43">${infoComandi}</small></span><button class="btn-del" onclick="event.stopPropagation(); deleteSong(${brano.id})">🗑️</button>`;
+            div.className = 'song-item' + (brano.id === idSelezionato ? ' active' : '');
+            div.dataset.id = String(brano.id);
+            div.onclick = () => { if (ignoraClickScaletta) return; caricaBrano(brano.id); };
+            const handle = document.createElement('span');
+            handle.className = 'drag-handle';
+            handle.textContent = '☰';
+            handle.title = 'Trascina per riordinare';
+            handle.setAttribute('aria-label', 'Trascina per riordinare');
+            handle.onpointerdown = (ev) => iniziaTrascina(ev);
+            const main = document.createElement('span');
+            main.className = 'song-main';
+            const info = brano.comandi && brano.comandi.length ? `🎤 ${brano.comandi.length} comandi pronti` : 'Nessun comando';
+            main.innerHTML = `${index + 1}. <strong>${escapeHtml(brano.nome)}</strong> (${brano.bpm} BPM)<br><small style="color:#ff9f43">${info}</small>`;
+            const tools = document.createElement('span');
+            tools.className = 'song-tools';
+            const up = document.createElement('button');
+            up.type = 'button'; up.className = 'btn-move'; up.textContent = '▲';
+            up.disabled = index === 0; up.setAttribute('aria-label', 'Sposta su');
+            up.onclick = (ev) => { ev.stopPropagation(); spostaBrano(brano.id, -1); };
+            const down = document.createElement('button');
+            down.type = 'button'; down.className = 'btn-move'; down.textContent = '▼';
+            down.disabled = index === scaletta.length - 1; down.setAttribute('aria-label', 'Sposta giù');
+            down.onclick = (ev) => { ev.stopPropagation(); spostaBrano(brano.id, 1); };
+            const del = document.createElement('button');
+            del.type = 'button'; del.className = 'btn-del'; del.textContent = '🗑️';
+            del.setAttribute('aria-label', 'Elimina');
+            del.onclick = (ev) => { ev.stopPropagation(); deleteSong(brano.id); };
+            tools.append(up, down, del);
+            div.append(handle, main, tools);
             container.appendChild(div);
         });
     }
+    function spostaBrano(id, dir) {
+        const i = scaletta.findIndex(b => b.id === id);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= scaletta.length) return;
+        const prima = scaletta.slice();
+        const [b] = scaletta.splice(i, 1);
+        scaletta.splice(j, 0, b);
+        if (!salva()) { scaletta = prima; return; }
+        renderScaletta();
+    }
+    function iniziaTrascina(ev) {
+        if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const row = ev.currentTarget.closest('.song-item');
+        try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch (e) {}
+        dragScaletta = { pointerId: ev.pointerId, id: Number(row.dataset.id), moved: false };
+        row.classList.add('dragging');
+    }
+    function muoviTrascina(ev) {
+        if (!dragScaletta || ev.pointerId !== dragScaletta.pointerId) return;
+        const row = document.querySelector('#setlistContainer .song-item.dragging');
+        if (!row) return;
+        const rows = [...document.querySelectorAll('#setlistContainer .song-item')];
+        const from = rows.indexOf(row);
+        let to = rows.findIndex(r => ev.clientY < r.getBoundingClientRect().top + r.getBoundingClientRect().height / 2);
+        if (to < 0) to = rows.length - 1;
+        if (to === from) return;
+        dragScaletta.moved = true;
+        ev.preventDefault();
+        const parent = row.parentNode;
+        if (to > from) parent.insertBefore(row, rows[to].nextSibling);
+        else parent.insertBefore(row, rows[to]);
+    }
+    function fineTrascina(ev) {
+        if (!dragScaletta || ev.pointerId !== dragScaletta.pointerId) return;
+        const moved = dragScaletta.moved;
+        dragScaletta = null;
+        if (!moved) {
+            const row = document.querySelector('#setlistContainer .song-item.dragging');
+            if (row) row.classList.remove('dragging');
+            return;
+        }
+        ignoraClickScaletta = true;
+        setTimeout(() => { ignoraClickScaletta = false; }, 400);
+        const ids = [...document.querySelectorAll('#setlistContainer .song-item')].map(r => Number(r.dataset.id));
+        const prima = scaletta.slice();
+        const prossima = ids.map(id => prima.find(b => b.id === id)).filter(Boolean);
+        if (prossima.length === prima.length) {
+            scaletta = prossima;
+            if (!salva()) scaletta = prima;
+        }
+        renderScaletta();
+    }
+    document.addEventListener('pointermove', muoviTrascina);
+    document.addEventListener('pointerup', fineTrascina);
+    document.addEventListener('pointercancel', fineTrascina);
     function caricaBrano(id) {
         idSelezionato = id;
         const brano = branoSel();
         if (brano) {
-            currentBpm = parseInt(brano.bpm);
+            currentBpm = limitaBpm(brano.bpm);
             document.getElementById('liveSongName').innerText = brano.nome.toUpperCase();
             document.getElementById('liveBpm').innerText = currentBpm;
+            riflettiBpmBase();
             resetConteggio();
             renderScaletta();
             precaricaVocali();
@@ -360,9 +456,28 @@
         if (b && parseInt(b.bpm) !== currentBpm) { btn.style.display = 'inline-block'; btn.innerText = `💾 Salva ${currentBpm} BPM nel brano (ora ${b.bpm})`; }
         else btn.style.display = 'none';
     }
-    // +/- e TAP cambiano solo il tempo dal vivo
+    const BPM_MIN = 30, BPM_MAX = 300;
+    function limitaBpm(n) {
+        n = Math.round(Number(n));
+        if (!Number.isFinite(n)) n = 120;
+        return Math.max(BPM_MIN, Math.min(BPM_MAX, n));
+    }
+    function riflettiBpmBase() {
+        const slider = document.getElementById('bpmSlider');
+        if (slider && Number(slider.value) !== currentBpm) slider.value = String(currentBpm);
+    }
+    // +/- , leva e TAP cambiano solo il tempo dal vivo (non il BPM salvato nel brano)
     function changeBpm(qta) {
-        currentBpm = Math.max(30, Math.min(300, currentBpm + qta));
+        currentBpm = limitaBpm(currentBpm + qta);
+        document.getElementById('liveBpm').innerText = currentBpm;
+        riflettiBpmBase();
+        aggiornaTastoBpm();
+    }
+    function suSliderBpm() {
+        const v = limitaBpm(document.getElementById('bpmSlider').value);
+        riflettiBpmBase();
+        if (v === currentBpm) return;
+        currentBpm = v;
         document.getElementById('liveBpm').innerText = currentBpm;
         aggiornaTastoBpm();
     }
@@ -1115,7 +1230,8 @@
         const tipo = document.getElementById('tcTipo').value === 'rampa' ? 'rampa' : 'istantaneo';
         const rampaLetta = parseInt(document.getElementById('tcRamp').value, 10);
         if (!Number.isInteger(battuta) || battuta < 1) return msg('tcMsg', 'Metti una battuta valida (1 o più).', 'err');
-        if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) return msg('tcMsg', 'BPM tra 30 e 300.', 'err');
+        // Il bersaglio è assoluto: può essere sotto il BPM di partenza del brano, dentro 30–300.
+        if (!Number.isFinite(bpm) || bpm < BPM_MIN || bpm > BPM_MAX) return msg('tcMsg', 'BPM tra 30 e 300, anche più basso del tempo di partenza.', 'err');
         if (tipo === 'rampa' && (!Number.isInteger(rampaLetta) || rampaLetta < 1)) return msg('tcMsg', 'La rampa deve durare almeno 1 battuta.', 'err');
         const cambio = normalizzaUno({ battuta, bpm, rampa: tipo === 'rampa' ? rampaLetta : 0, tipo });
         if (dove === 'sel' && !branoSel()) return msg('tcMsg', 'Nessun brano selezionato in scaletta.', 'err');
